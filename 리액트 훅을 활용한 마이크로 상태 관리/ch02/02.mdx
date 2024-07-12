@@ -1,0 +1,222 @@
+# 지역 상태와 전역 상태 사용하기
+
+### 언제 지역 상태를 사용하는가?
+
+상태는 인수 외부의 값을 말하며, 상태에 의존하는 함수는 순수하지 않음
+➡️ 컴포넌트 내부에서 상태를 사용할 경우 순수하지 않은 함수임
+
+하지만 상태가 특정 컴포넌트 내부에서만 사용된다면 다른 컴포넌트에서 영향을 미치지 않게 됨 ➡️ 억제된(contained) 함수로 표현
+
+#### 1) 함수와 인수
+
+순수 함수
+
+```js
+const addOne = (n) => n + 1;
+```
+
+비순수 함수
+
+```js
+let base = 1;
+const addBase = (n) => n + base;
+```
+
+전역 변수 `base`에 의존
+
+이 방식이 무조건 나쁜 것은 아님. 함수 외부에서 함수 작동 방식을 변경할 수 있음.
+그러나 외부 변수에 의존적이라는 것을 모를 수 있기 때문에 위험한 것임 (트레이드 오프를 잘 생각해야 함)
+
+🤨 기술적으로 자바스크립트의 변수는 싱글턴이라 할 수 있음.
+한 번 생성된 전역변수는 window 객체에 등록되며 이후 참조할 경우 window 객체에 등록된 값을 반환하기 때문임.
+
+base가 전역변수(싱글턴)일 경우 코드 재사용성이 떨어지므로 다음 같이 컨테이너 객체를 만드는 것이 더 모듈화된 접근 방식임.
+
+```js
+const createContainer = () => {
+  let base = 1;
+  const addBase = (n) => n + base;
+  const changeBase = (b) => {
+    base = b;
+  };
+  return { addBase, changeBase };
+};
+
+const { addBase, changeBase } = createContainer();
+```
+
+여기에서의 addBase가 수학적으로 순수한 함수는 아니지만 changeBase를 통해 base를 변경하지 않는 이상 addBase를 호출하면 항상 동일한 결과를 얻을 수 있다. 이를 멱등성이라고 부름
+
+#### 2) 지역 상태에 대한 useState 이해하기
+
+```jsx
+const AddBase = ({ number }) => {
+  const [base, changeBase] = useState(1);
+  return <div>{base + number}</div>;
+};
+```
+
+이 함수는 인수에 포함되지 않는 `base`에도 의존하므로 순수하지 않음.
+
+하지만 `changeBase`로 base를 변경하지 않는 한 반환하는 값은 동일하므로 멱등성을 지님
+
+`changeBase`는 함수 선언 범위 내에서만 사용할 수 있으므로 억제된 것임.
+➡️ `useState`는 지역상태를 사용하는 것임!
+
+컴포넌트는 억제되었고, 컴포넌트 외부의 그 어떤 것에도 영향을 미치지 않으므로 지역성을 보장함
+
+#### 3) 지역상태의 한계
+
+지역성을 제공하고 싶지 않을 때, 지역 상태를 사용하는 것이 적절하지 않음.
+
+함수 컴포넌트 외부에서 상태를 변경해야 한다면 전역 상태가 필요함.
+
+전역 상태는 컴포넌트 외부에서 리액트 컴포넌트의 동작을 제어할 때 유용하게 사용할 수 있으나 컴포넌트 동작을 예측하기 어렵다는 단점이 있음
+
+➡️ 지역 상태를 기본으로 하고, 전역 상태는 보조 수단으로 사용하는 것이 좋음
+
+### 지역 상태를 효과적으로 사용하는 방법
+
+#### 1) 상태 끌어올리기
+
+상위 컴포넌트 트리에서 상태를 정의하기
+
+- 단점: 성능 문제 -> 상태를 상위 컴포넌트로 전달할 경우, 모든 자식 컴포넌트들을 리렌더링할 수 있음
+
+#### 2) 내용 끌어올리기
+
+상위 컴포넌트에서 내용을 정의하기
+
+AS-IS
+
+```js
+const AdditionalInfo = () => {
+  return <p>Some Information</p>
+}
+
+const Component1 = ({count, setCount}) => {
+  return (
+    <div>
+      {count}
+      <button onClick={() => setCount(c=> c + 1)}> + </button>
+      <AdditionalInfo>
+    </div>
+  );
+}
+
+const Component2 = ({count, setCount}) => {
+  return (
+    <div>
+      {count}
+      <button onClick={() => setCount(c=> c + 1)}>+</button>
+    </div>
+  );
+}
+
+const Parent = () => {
+  const [count, setCount] = useState();
+  return (
+    <>
+      <Component1 count={count} setCount={setCount} />
+      <Component2 count={count} setCount={setCount} />
+    </>
+  )
+}
+```
+
+- 문제점: count 가 변경되면 Parent가 리렌더링 후, Component1, Component2, AdditionalInfo 모두 렌더링됨. 그러나 AdditionalInfo는 count에 의존하지 않기 때문에 불필요한 렌더링임.
+- 해결방안: JSX 요소를 최상위 컴포넌트로 끌어올리기
+
+1. 컴포넌트를 Props로 전달
+
+```js
+const AdditionalInfo = () => {
+  return <p>Some Information</p>;
+};
+
+const Component1 = ({ count, setCount, additionalInfo }) => {
+  return (
+    <div>
+      {count}
+      <button onClick={() => setCount((c) => c + 1)}> + </button>
+      {additionalInfo}
+    </div>
+  );
+};
+
+const Component2 = ({ count, setCount }) => {
+  return (
+    <div>
+      {count}
+      <button onClick={() => setCount((c) => c + 1)}>+</button>
+    </div>
+  );
+};
+
+const Parent = ({ additionalInfo }) => {
+  const [count, setCount] = useState();
+  return (
+    <>
+      <Component1
+        count={count}
+        setCount={setCount}
+        additionalInfo={additionalInfo}
+      />
+      <Component2 count={count} setCount={setCount} />
+    </>
+  );
+};
+
+const GrandParent = () => {
+  return <Parent additionalInfo={<AdditionalInfo />} />;
+};
+```
+
+2. children Props 사용
+
+```js
+const AdditionalInfo = () => {
+  return <p>Some Information</p>
+}
+
+const Component1 = ({count, setCount, children}) => {
+  return (
+    <div>
+      {count}
+      <button onClick={() => setCount(c=> c + 1)}> + </button>
+      {children}
+    </div>
+  );
+}
+
+const Component2 = ({count, setCount}) => {
+  return (
+    <div>
+      {count}
+      <button onClick={() => setCount(c=> c + 1)}>+</button>
+    </div>
+  );
+}
+
+const Parent = ({children}) => {
+  const [count, setCount] = useState();
+  return (
+    <>
+      <Component1 count={count} setCount={setCount}>
+        {children}
+      </Component1>
+      <Component2 count={count} setCount={setCount} />
+    </>
+  )
+}
+
+const GrandParent = () => {
+  return (
+    <Parent additionalInfo={} >
+      <AdditionalInfo />
+    </Parent>
+  );
+}
+```
+
+TO-BE
