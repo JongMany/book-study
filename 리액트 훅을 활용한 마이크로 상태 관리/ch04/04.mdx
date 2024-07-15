@@ -1,1 +1,473 @@
 # 구독을 이용한 모듈 상태 공유
+
+컨텍스트는 싱글턴 패턴을 피하고, 각 하위 트리에 서로 다른 값을 제공하기 위한 기능임
+
+**전역 상태를 싱글턴과 유사하게 만들고자 한다면?**
+
+<u>모듈 상태</u>를 사용하는 것이 싱글턴 값으로 메모리에 할당되기 때문에 더
+적합함
+
+모듈 상태란? ECMAScript 모듈 스코프에 정의된 상수 또는 변수를 말함
+
+리액트에서 모듈 상태를 전역으로 사용하기 위해서는 `subscription`을 사용해야 함
+
+---
+
+### **모듈 상태 살펴보기 in JS**
+
+모듈 상태(module state)는 모듈 수준에서 정의된 변수. ➡️ 모듈은 ES 모듈, 또는 파일을 의미함
+
+(1) 모듈 상태 정의하기
+
+```js
+let state = {
+  count: 0,
+};
+```
+
+(2) 모듈 상태에 접근하는 함수 만들기
+
+```js
+export const getState = () => state;
+
+export const setState = (nextState) => {
+  state = nextState;
+};
+```
+
+setState 함수의 인자로 함수가 들어올 수 있으므로 리팩토링
+
+```js
+export const setState = (nextState) => {
+  state = typeof nextState === "function" ? nextState(state) : nextState;
+};
+```
+
+(3) 컨테이너로 감싸기
+모듈 상태를 직접 정의하는 대신, 상태와 상태에 접근할 수 있는 함수가 내부에 있는 컨테이너를 만들기
+
+```js
+export const createContainer = (initialState) => {
+  let state = initialState;
+  const getState = () => state;
+  const setState = (nextState) => {
+    state = typeof nextState === "function" ? nextState(state) : nextState;
+  };
+  return { getState, setState };
+};
+```
+
+이렇게 정의하면 다음과 같이 사용 가능
+
+```js
+const { getState, setState } = createContainer({ count: 0 });
+```
+
+---
+
+### **리액트에서 전역 상태를 다루기 위한 모듈 상태 사용법**
+
+리액트 컨텍스트는 하위 트리에 따라 각각 다른 값을 제공하도록 설계되어 있음.  
+싱글턴 전역 상태에 대해 리액트 컨텍스트를 사용하는 것도 가능하지만 컨텍스트의 기능을 완전하게 활용한 것은 아님
+
+전체 트리에서 전역 상태가 필요하다면 모듈 상태가 더 적합하지만 리액트 컴포넌트에서 모듈 상태를 사용하려면 리렌더링 최적화를 직접 처리해야 함
+
+_- 작동하지 않는 예시_
+
+```jsx
+let count = 0;
+
+const Component1 = () => {
+  const inc = () => {
+    count += 1;
+  };
+
+  return (
+    <div>
+      {count}
+      <button onClick={inc}>+1</button>
+    </div>
+  );
+};
+```
+
+처음에는 count가 0으로 표시되고, 버튼을 클릭하면 count가 증가하지만 컴포넌트가 리렌더링되지 않음.
+
+리렌더링을 일으키려면 `useState`, `useReducer` 2개만 있음
+
+_- 작동시키도록 수정하기_
+
+```jsx
+let count = 0;
+
+const Component1 = () => {
+  const [state, setState] = useState(count);
+
+  const inc = () => {
+    count += 1;
+    setState(count);
+  };
+
+  return (
+    <div>
+      {state}
+      <button onClick={inc}>+1</button>
+    </div>
+  );
+};
+
+const Component2 = () => {
+  const [state, setState] = useState(count);
+
+  const inc2 = () => {
+    count += 2;
+    setState(count);
+  };
+
+  return (
+    <div>
+      {state}
+      <button onClick={inc}>+1</button>
+    </div>
+  );
+};
+```
+
+버튼을 클릭하면 count 값이 증가하고, 컴포넌트가 리렌더링됨
+단, `Component1`에서 버튼을 클릭하더라도 `Component2`가 리렌더링되지 않음.
+`Component2`에서 버튼을 클릭해야만 리렌더링되고 최신 모듈 상태가 표시됨.
+즉, `Component1`과 `Component2`의 상태가 일치함.
+두 개의 `Component1` 컴포넌트를 사용하더라도 불일치가 발생함
+
+**해결책** Component1과 Component2에서 동시에 setState 함수를 호출 (😨 Bad)
+
+컴포넌트 생명 주기를 고려하면서 컴포넌트 외부에 있는 모듈 수준에서 `setState`를 관리할 필요가 있음  
+➡️ 컴포넌트 생명 주기에 따라 동작하는 `useEffect` 훅을 이용해 `setState`를 리액트 외부에 `Set`과 같은 별도의 자료구조에 추가해서 관리
+
+```jsx
+let count = 0;
+const setStateFunctions = new Set<(count: number) => void>();
+
+const Component1 = () => {
+  const [state, setState] = useState(0);
+
+  useEffect(() => {
+    setStateFunctions.add(setState);
+    return () => {
+      setStateFunctions.delete(setState);
+    };
+  }, []);
+
+  const inc = () => {
+    count += 1;
+    setStateFunctions.forEach((fn) => fn(count));
+  }
+
+  return (
+    <div>
+      {state}
+      <button onClick={inc}>+1</button>
+    </div>
+  );
+}
+
+
+const Component2 = () => {
+  const [state, setState] = useState(0);
+
+  useEffect(() => {
+    setStateFunctions.add(setState);
+    return () => {
+      setStateFunctions.delete(setState);
+    };
+  }, []);
+
+  const inc2 = () => {
+    count += 2;
+    setStateFunctions.forEach((fn) => fn(count));
+  }
+
+  return (
+    <div>
+      {state}
+      <button onClick={inc2}>+2</button>
+    </div>
+  );
+}
+```
+
+중복 코드가 발생하였기도 하며, 바라봐야할 컴포넌트가 많아질수록 관리가 어려워짐
+
+---
+
+### **기초적인 구독 추가하기**
+
+구독: 갱신에 대한 알림을 받기 위한 방법
+
+구독의 일반적인 패턴
+
+```js
+const unsubscribe = store.subscribe(() => {
+  console.log("Store is Updated!");
+});
+```
+
+- `store`에는 `subscribe` 메서드가 있음.  
+  메서드는 `callback` 함수를 받고, `unsubscribe` 함수가 반환됨  
+  `store`가 갱신될 때마다 콜백함수가 호출됨
+
+(1) 구독 패턴으로 모듈 상태를 구현하기
+
+```ts
+type Store<T> = {
+  getState: () => T;
+  setState: (action: T | ((prev: T) => T)) => void;
+  subscribe: (callback: () => void) => () => void;
+};
+
+const createStore = <T extends unknown>(initialState: T): Store<T> => {
+  let state = initialState;
+  const callbacks = new Set<() => void>();
+  const getState = () => state;
+  const setState = (action: T | ((prev: T) => T)) => {
+    state =
+      typeof action === "function"
+        ? (nextState as (prev: T) => T)(state)
+        : nextState;
+
+    callbacks.forEach((callback) => callback());
+  };
+
+  const subscribe = (callback: () => void) => {
+    callbacks.add(callback);
+    return () => {
+      callbacks.delete(callback);
+    };
+  };
+
+  return { getState, setState, subscribe };
+};
+```
+
+(2) Vanilla JS에서 구독 패턴 사용하기
+
+```js
+import { createStore } from "...";
+
+const store = createStore({ count: 0 });
+console.log(store.getStore());
+store.setState({ count: 1 });
+store.subscribe(() => {
+  console.log("Store is Updated!");
+});
+```
+
+- `store` 변수는 `state`를 담고 있으므로 `store` 변수 전체를 모듈 상태라고 볼 수 있음
+
+(3) React에서 구독 패턴 사용하기
+
+```js
+// 1. 커스텀 훅 정의 - store의 상태값과 갱신함수를 튜플로 반환
+const useStore = (store) => {
+  const [state, setState] = useState(store.getState());
+  useEffect(() => {
+    const unsubscribe = store.subscribe(() => {
+      setState(store.getState());
+    });
+    setState(store.getState()); // 엣지케이스를 다루기 위한 코드 (useEffect가 뒤늦게 실행되어 store가 이미 새로운 상태를 가지고 있을 가능성이 있으므로)
+    return unsubscribe;
+  }, [store]);
+
+  return [state, store.setState];
+};
+```
+
+```jsx
+// 2. 컴포넌트에서 커스텀 훅 사용하기
+const Component1 = () => {
+  const [state, setState] = useStore(store);
+
+  const inc = () => {
+    setState((prev) => ({
+      ...prev,
+      count: prev.count + 1,
+    }));
+  };
+
+  return (
+    <div>
+      {state.count}
+      <button onClick={inc}>+1</button>
+    </div>
+  );
+};
+
+const Component2 = () => {
+  const [state, setState] = useStore(store);
+
+  const inc2 = () => {
+    setState((prev) => ({
+      ...prev,
+      count: prev.count + 2,
+    }));
+  };
+
+  return (
+    <div>
+      {state.count}
+      <button onClick={inc2}>+2</button>
+    </div>
+  );
+};
+
+const App = () => {
+  return (
+    <div>
+      <Component1 />
+      <Component2 />
+    </div>
+  );
+};
+```
+
+---
+
+### **선택자와 useSubscription 사용하기**
+
+useStore는 상태 객체 전체를 반환하므로 컴포넌트가 불필요하게 리렌더링될 수 있음  
+필요없는 리렌더링을 피하기 위해 컴포넌트가 필요로 하는 상태의 일부분만 반환하는 선택자를 도입하기
+
+(1) 선택자를 사용하여 상태 객체의 일부만 반환하기 (`useStoreSelector`)
+
+```js
+const store = createStore({ count1: 0, count2: 0 });
+
+const useStoreSelector = <T, S>(store: Store<T>, selector: (state: T) => S) => {
+  const [state, setState] = useState(selector(store.getState()));
+
+  useEffect(() => {
+    const unsubscribe = store.subscribe(() => {
+      setState(selector(store.getState()));
+    });
+    setState(selector(store.getState()));
+    return unsubscribe;
+  }, [store, selector]);
+
+  return state;
+};
+```
+
+useStore와 달리 전체 상태 객체를 반환하는 대신 선택자 함수를 사용하여 상태 객체의 일부분만 반환함
+
+(2) `useStoreSelector`를 사용하여 상태 객체의 일부만 반환하기
+
+```jsx
+const Component1 = () => {
+  const state = useStoreSelector(
+    store,
+    useCallback((state) => state.count1, [])
+  );
+
+  const inc = () => {
+    store.setState((prev) => ({
+      ...prev,
+      count1: prev.count1 + 1,
+    }));
+  };
+
+  return (
+    <div>
+      count1: {state}
+      <button onClick={inc}>+1</button>
+    </div>
+  );
+};
+```
+
+- 안정적으로 선택자 함수를 넘기기 위해 useCallback을 사용함.  
+  `useCallback`을 사용하지 않은 경우, 선택자 함수의 `useEffect`의 두번째 인수에 선택자 함수가 지정되어 있으므로 선택자 함수를 바꾸지 않더라도 `Component1`을 렌더링할 때마다 store를 구독 해제하고 구독하는 것을 반복하게 됨
+
+```jsx
+const selectCount2 = (state: ReturnType<typeof store.getState>) => state.count2;
+
+const Component2 = () => {
+  const state = useStoreSelector(store, selectCount2);
+
+  const inc2 = () => {
+    store.setState((prev) => ({
+      ...prev,
+      count2: prev.count2 + 2,
+    }));
+  };
+
+  return (
+    <div>
+      count2: {state}
+      <button onClick={inc2}>+1</button>
+    </div>
+  );
+};
+```
+
+```jsx
+const App = () => {
+  return (
+    <div>
+      <Component1 />
+      <Component1 />
+      <Component2 />
+      <Component2 />
+    </div>
+  );
+};
+```
+
+주의할 점: `store` 또는 `selector`가 변경될 때, `useEffect`가 조금 늦게 실행되기 때문에 재구독될 때까지는 갱신되기 이전 상태 값을 반환한다는 점이 있다.
+=> 리액트 팀은 이러한 사용사례에 대해 `useSubscription`이라는 공식적인 훅을 제공 (React 18에서는 `useSyncExternalStore`로 변경됨)
+
+(3) useSubscription 사용하기
+
+```jsx
+const useStoreSelector = (store, selector) =>
+  useSubscription(
+    useMemo(
+      () => ({
+        getCurrentValue: () => selector(store.getState()),
+        subscribe: store.subscribe,
+      }),
+      [store, selector]
+    )
+  );
+```
+
+위와 같이 수정해도 되지만 컴포넌트에서 직접 `useSubscription`을 사용해도 됨
+
+```jsx
+const Component1 = () => {
+  const state = useSubscription(
+    useMemo(
+      () => ({
+        getCurrentValue: () => store.getState().count1,
+        subscribe: store.subscribe,
+      }),
+      [store]
+    )
+  );
+
+  const inc = () => {
+    store.setState((prev) => ({
+      ...prev,
+      count1: prev.count1 + 1,
+    }));
+  };
+
+  return (
+    <div>
+      count1: {state}
+      <button onClick={inc}>+1</button>
+    </div>
+  );
+};
+```
+
+- useMemo를 사용했으므로, useCallback은 필요하지 않음.
