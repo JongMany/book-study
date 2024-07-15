@@ -1,1 +1,369 @@
 # 리액트 컨텍스트를 이용한 컴포넌트 상태 공유
+
+16.3 버전부터 컨텍스트라는 기능을 제공하기 시작함  
+컨텍스트는 상태와 관련없지만 props를 대신해서 컴포넌트 간에 데이터를 전달하는 것이 가능하므로 전역 상태를 제공할 수 있다.
+
+하지만 컨텍스트 자체가 전역 상태를 위해 설계된 것이 아니므로 몇가지 문제가 발생할 수 있음  
+가장 큰 문제는 상태가 갱신될 때 모든 컨텍스트 소비자(Consumer)가 리렌더링되어 불필요한 렌더링이 발생할 수 있게 됨. ➡️ 전역상태를 여러 조각으로 나누어 사용하는 것이 권장됨
+
+### useState와 useContext 탐구하기
+
+#### 1. 정적 값을 이용해 useContext 사용하기
+
+리액트 컨텍스트에는 다양한 값을 제공하는 여러 개의 공급자가 있다.
+공급자는 중첩될 수 있고, 소비자 컴포넌트는 컴포넌트 트리 중 가장 가까운 공급자를 선택해 컨텍스트 값을 가져옴.
+
+```jsx
+// context 정의하고 기본값을 넣음
+const ColorContext = createContext("black"); // 기본값은 공급자에 컴포넌트가 없는 경우 사용됨
+
+//소비자 컴포넌트 정의
+const Component = () => {
+  const color = useContext(ColorContext);
+  return <div style={{ color }}>Hello {color}</div>;
+};
+
+// 컴포넌트 정의
+const App = () => {
+  return (
+    <>
+      <Component />
+      <ColorContext.Provider value="red">
+        <Component />
+      </ColorContext.Provider>
+      <ColorContext.Provider value="green">
+        <Component />
+      </ColorContext.Provider>
+    </>
+  );
+};
+```
+
+#### 2. useContext와 함께 useState 사용하기
+
+```jsx
+const CountStateContext = createContext({
+  count: 0,
+  setCount: () => {},
+});
+
+// App 컴포넌트는 useState로 생성한 상태를 가지고 있으며, 컨텍스트 공급자 컴포넌트에 count와 setCount를 전달함
+const App = () => {
+  const [count, setCount] = useState(0);
+  return (
+    <CountStateContext.Provider value={{ count, setCount }}>
+      <Parent />
+    </CountStateContext.Provider>
+  );
+};
+
+const Parent = () => {
+  return (
+    <>
+      <Component1 />
+      <Component2 />
+    </>
+  );
+};
+
+const Component1 = () => {
+  const { count, setCount } = useContext(CountStateContext);
+  return (
+    <div>
+      {count}
+      <button onClick={() => setCount((c) => c + 1)}>+</button>
+    </div>
+  );
+};
+
+const Component2 = () => {
+  const { count, setCount } = useContext(CountStateContext);
+  return (
+    <div>
+      {count}
+      <button onClick={() => setCount((c) => c + 1)}>+</button>
+    </div>
+  );
+};
+```
+
+### 컨텍스트 이해하기
+
+#### 1. 컨텍스트 전파 원리
+
+컨텍스트 공급자가 새로운 컨텍스트 값을 받으면, 모든 컨텍스트 소비자 컴포넌트가 리렌더링됨
+
+자식 컴포넌트가 리렌더링 되는 이유
+
+1. 부모 컴포넌트 때문
+2. 컨텍스트 때문
+
+컨텍스트값이 변경되지 않았는데도 리렌더링이 발생하는 문제를 방지하려면?  
+memo를 사용하거나 내용 끌어올리기 방법을 사용
+
+```
+const ColorContext = createContext("black"); // 기본값은 공급자에 컴포넌트가 없는 경우 사용됨
+
+//소비자 컴포넌트 정의
+const ColorComponent = () => {
+  const color = useContext(ColorContext);
+  const renderCount = useRef(1);
+
+  useEffect(() => {
+    renderCount.current += 1;
+  })
+
+  return <div style={{ color }}>
+    Hello {color} (renders: {renderCount.current})
+  </div>;
+};
+
+// Memo 사용 - 기반 컴포넌트로부터 메모이제이션된 컴포넌트를 만드는 것
+const MemoedColorComponent = memo(ColorComponent);
+
+const DummyComponent = () => {
+  const renderCount = useRef(1);
+
+  useEffect(() => {
+    renderCount.current += 1;
+  })
+
+  return <div>Dummy (renders: {renderCount.current})</div>
+};
+
+const MemoedDummyComponent = memo(DummyComponent);
+
+const Parent = () => {
+  return (
+    <ul>
+      <li><MemoedColorComponent /> </li>
+      <li><MemoedDummyComponent /> </li>
+      <li><ColorComponent /> </li>
+      <li><DummyComponent /> </li>
+    </ul>
+  );
+};
+
+const App = () => {
+  const [color, setColor] = useState("red");
+  return (
+    <ColorContext.Provider value={color}>
+      <input value={color} onChange={(e) => setColor(e.target.value)} />
+      <Parent />
+    </ColorContext.Provider>
+  );
+};
+```
+
+1. 모든 컴포넌트가 렌더링 됨
+2. 텍스트 입력 필드에서 값 변경시 `App` 컴포넌트 리렌더링
+3. `ColorContext.Provider는` 새로운 값을 받고, 동시에 `Parent` 컴포넌트가 리렌더링됨
+4. `DummyComponent`는 리렌더링되지만, `MemoedDummyComponent`는 리렌더링되지 않음
+5. `ColorComponent`는 리렌더링 됨. (부모가 리렌더링 + 컨텍스트가 변경됨)
+6. `MemoedColorComponent`는 리렌더링됨 (컨텍스트가 변경되었기 때문임)
+
+-> memo는 내부 컨텍스트 소비자가 리렌더링되는 것을 막지 못함!
+
+### **전역 상태를 위한 컨텍스트 만들기**
+
+전역 상태와 함께 컨텍스트를 사용하는 방법
+
+1. 작은 상태 조각 만들기
+2. useReducer로 하나의 상태를 만들고 여러 컨텍스트로 전파하기
+
+#### 1. 작은 상태 조각 만들기
+
+전역 상태를 여러 조각으로 나누는 것이 좋음. (합쳐진 큰 객체를 사용하는 대신 각 조각에 대한 컨텍스트와 전역 상태를 만들 수 있음)
+
+`Context`를 정의하기
+
+```jsx
+type CountContextType = [number, Dispatch<SetStateAction<number>>];
+
+const Count1Context = createContext < CountContextType > [0, () => {}];
+const Count2Context = createContext < CountContextType > [0, () => {}];
+```
+
+`Context`를 활용한 컴포넌트를 정의하기
+
+```jsx
+const Counter1 = () => {
+  const [count1, setCount1] = useContext(Count1Context);
+
+  return (
+    <div>
+      <div>Count1: {count1}</div>
+      <button onClick={() => setCount1((c) => c + 1)}>+1</button>
+    </div>
+  );
+};
+
+const Counter2 = () => {
+  const [count2, setCount2] = useContext(Count2Context);
+
+  return (
+    <div>
+      <div>Count2: {count1}</div>
+      <button onClick={() => setCount1((c) => c + 1)}>+1</button>
+    </div>
+  );
+};
+
+const Parent = () => {
+  return (
+    <div>
+      <Counter1 />
+      <Counter1 />
+      <Counter2 />
+      <Counter2 />
+    </div>
+  );
+};
+```
+
+`Context`에 대한 Provider를 정의하기
+
+```jsx
+const Count1Provider = ({ children }) => {
+  const [count1, setCount1] = useState(0);
+  return (
+    <Count1Context.Provider value={[count1, setCount1]}>
+      {children}
+    </Count1Context.Provider>
+  );
+};
+
+const Count2Provider = ({ children }) => {
+  const [count2, setCount2] = useState(0);
+  return (
+    <Count2Context.Provider value={[count2, setCount2]}>
+      {children}
+    </Count2Context.Provider>
+  );
+};
+
+const App = () => {
+  return (
+    <Count1Provider>
+      <Count2Provider>
+        <Parent />
+      </Count2Provider>
+    </Count1Provider>
+  );
+};
+```
+
+이렇게 공급자를 나눔으로써 리렌더링 문제가 발생하지 않게 됨.  
+즉, Counter1과 Counter2 컴포넌트는 각각 count1, count2가 변경될 때만 리렌더링됨
+
+#### 2. useReducer로 하나의 상태를 만들고 여러 컨텍스트로 전파하기
+
+단일 상태를 만들고 여러 컨텍스트를 사용해 상태 조각을 배포하는 방법임.  
+이 경우, 상태를 갱신하는 함수를 배포하는 것은 별도의 컨텍스트로 해야 함
+
+```jsx
+type Action = { type: "INC1" } | { type: "INC2" };
+
+const Count1Context = createContext < number > 0;
+const Count2Context = createContext < number > 0;
+const DispatchContext = createContext < Dispatch < Action >> (() => {});
+```
+
+- 상태를 위한 컨텍스트 2개 + 디스패치를 위한 컨텍스트 1개를 만듦
+
+컨텍스트 활용한 컴포넌트(소비자)를 만들기
+
+```jsx
+const Counter1 = () => {
+  const count1 = useContext(Count1Context);
+  const dispatch = useContext(DispatchContext);
+
+  return (
+    <div>
+      <div>Count1: {count1}</div>
+      <button onClick={() => dispatch({ type: "INC1" })}>+1</button>
+    </div>
+  );
+};
+
+const Counter2 = () => {
+  const count2 = useContext(Count2Context);
+  const dispatch = useContext(DispatchContext);
+
+  return (
+    <div>
+      <div>Count2: {count2}</div>
+      <button onClick={() => dispatch({ type: "INC2" })}>+1</button>
+    </div>
+  );
+};
+
+const Parent = () => {
+  return (
+    <div>
+      <Counter1 />
+      <Counter1 />
+      <Counter2 />
+      <Counter2 />
+    </div>
+  );
+};
+```
+
+`Provider`를 만들기
+
+```jsx
+const Provider = ({ children }) => {
+  const [state, dispatch] = useReducer(
+    (state, action) => {
+      switch (action.type) {
+        case "INC1":
+          return { ...state, count1: state.count1 + 1 };
+        case "INC2":
+          return { ...state, count2: state.count2 + 1 };
+        default:
+          return state;
+      }
+    },
+    { count1: 0, count2: 0 }
+  );
+
+  return (
+    <DispatchContext.Provider value={dispatch}>
+      <Count1Context.Provider value={state.count1}>
+        <Count2Context.Provider value={state.count2}>
+          {children}
+        </Count2Context.Provider>
+      </Count1Context.Provider>
+    </DispatchContext.Provider>
+  );
+};
+```
+
+- 중첩된 공급자가 각 상태 조각과 하나의 실행함수만 제공하게 됨
+
+`App` 컴포넌트에 `Provider`를 사용하기
+
+```jsx
+const App = () => {
+  return (
+    <Provider>
+      <Parent />
+    </Provider>
+  );
+};
+```
+
+### **컨텍스트 사용을 위한 모범 사례**
+
+전역 상태를 위한 컨텍스트를 다루는 3가지 패턴
+
+1. 커스텀 훅과 공급자 컴포넌트 만들기
+2. 사용자 정의 훅이 있는 팩토리 패턴
+3. reduceRight를 이용한 공급자 중첩 방지
+
+#### 1. 커스텀 훅과 공급자 컴포넌트 만들기
+
+#### 2. 사용자 정의 훅이 있는 팩토리 패턴
+
+#### 3. reduceRight를 이용한 공급자 중첩 방지
