@@ -364,6 +364,245 @@ const App = () => {
 
 #### 1. 커스텀 훅과 공급자 컴포넌트 만들기
 
+1. 컨텍스트 만들기
+
+```jsx
+type CountContextType = [number, Dispatch<SetStateAction<number>>];
+
+const Count1Context = createContext(null);
+const Count2Context = createContext(null);
+
+const Count1Provider = ({ children }) => {
+  const [count, setCount] = useState(0);
+  return (
+    <Count1Context.Provider value={[count, setCount]}>
+      {children}
+    </Count1Context.Provider>
+  );
+};
+
+const Count2Provider = ({ children }) => {
+  const [count, setCount] = useState(0);
+  return (
+    <Count2Context.Provider value={[count, setCount]}>
+      {children}
+    </Count2Context.Provider>
+  );
+};
+```
+
+2. 커스텀 훅 만들기
+
+```jsx
+const useCount1 = () => {
+  const context = useContext(Count1Context);
+  if (!context) {
+    throw new Error("useCount1 must be used within a Count1Provider");
+  }
+  return context;
+};
+
+const useCount2 = () => {
+  const context = useContext(Count2Context);
+  if (!context) {
+    throw new Error("useCount2 must be used within a Count2Provider");
+  }
+  return context;
+};
+```
+
+3. 컴포넌트 만들기
+
+```jsx
+const Counter1 = () => {
+  const [count, setCount] = useCount1();
+
+  return (
+    <div>
+      <div>Count1: {count}</div>
+      <button onClick={() => setCount((c) => c + 1)}>+1</button>
+    </div>
+  );
+};
+
+const Counter2 = () => {
+  const [count, setCount] = useCount2();
+
+  return (
+    <div>
+      <div>Count2: {count}</div>
+      <button onClick={() => setCount((c) => c + 1)}>+1</button>
+    </div>
+  );
+};
+```
+
+4. `Provider`를 만들기
+
+```jsx
+const Parent = () => {
+  return (
+    <div>
+      <Counter1 />
+      <Counter1 />
+      <Counter2 />
+      <Counter2 />
+    </div>
+  );
+};
+
+const App = () => {
+  return (
+    <Count1Provider>
+      <Count2Provider>
+        <Parent />
+      </Count2Provider>
+    </Count1Provider>
+  );
+};
+```
+
 #### 2. 사용자 정의 훅이 있는 팩토리 패턴
 
+사용자 정의 훅과 공급자 컴포넌트를 팩토리 함수로 만들어서 사용하는 방법
+
+`createStateContext` 함수를 만들기
+
+- 상태를 가져오는 커스텀 훅과 공급자 컴포넌트 튜플을 반환한다.
+
+`createStateContext` 함수
+
+```jsx
+const createStateContext = (useValue: (init) => State) => {
+  const StateContext = createContext(null);
+  const StateProvider = ({ initialValue, children }) => {
+    return (
+      <StateContext.Provider value={useValue(initialValue)}>
+        {children}
+      </StateContext.Provider>
+    );
+  };
+
+  const useContextState = () => {
+    const context = useContext(StateContext);
+    if (!context) {
+      throw new Error("useContextState must be used within a StateProvider");
+    }
+    return context;
+  };
+
+  return [StateProvider, useContextState] as const;
+};
+```
+
+`createStateContext` 함수를 사용하여 컨텍스트 만들기
+
+```jsx
+const useNumberState = (init: number) => useState(init || 0);
+
+const [Count1Provider, useCount1] = createStateContext(useNumberState);
+const [Count2Provider, useCount2] = createStateContext(useNumberState);
+```
+
+`Counter1`와 `Counter2` 컴포넌트를 만들기
+
+```jsx
+const Counter1 = () => {
+  const [count, setCount] = useCount1();
+
+  return (
+    <div>
+      <div>Count1: {count}</div>
+      <button onClick={() => setCount((c) => c + 1)}>+1</button>
+    </div>
+  );
+};
+
+const Counter2 = () => {
+  const [count, setCount] = useCount2();
+
+  return (
+    <div>
+      <div>Count2: {count}</div>
+      <button onClick={() => setCount((c) => c + 1)}>+1</button>
+    </div>
+  );
+};
+
+const Parent = () => {
+  return (
+    <div>
+      <Counter1 />
+      <Counter1 />
+      <Counter2 />
+      <Counter2 />
+    </div>
+  );
+};
+```
+
+`App` 컴포넌트에 `Provider`를 사용하기
+
+```JSX
+const App = () => {
+  return (
+    <Count1Provider>
+      <Count2Provider>
+        <Parent />
+      </Count2Provider>
+    </Count1Provider>
+  );
+};
+```
+
+=> useState 대신 useReducer를 이용한 사용자 정의 훅을 사용할 수도 있음.
+
 #### 3. reduceRight를 이용한 공급자 중첩 방지
+
+```jsx
+const [Count1Provider, useCount1] = createStateContext(useNumberState);
+const [Count2Provider, useCount2] = createStateContext(useNumberState);
+const [Count3Provider, useCount3] = createStateContext(useNumberState);
+const [Count4Provider, useCount4] = createStateContext(useNumberState);
+const [Count5Provider, useCount5] = createStateContext(useNumberState);
+```
+
+```jsx
+const App = () => {
+  return (
+    <Count1Provider>
+      <Count2Provider>
+        <Count3Provider>
+          <Count4Provider>
+            <Count5Provider>
+              <Parent />
+            </Count5Provider>
+          </Count4Provider>
+        </Count3Provider>
+      </Count2Provider>
+    </Count1Provider>
+  );
+};
+```
+
+중첩된 컴포넌트 형태임 ➡️ 이러한 코딩 스타일을 완화하기 위해 reduceRight를 사용할 수 있음
+
+```jsx
+const App = () => {
+  const providers = [
+    [Count1Provider, {initialValue: 10}],
+    [Count2Provider, {initialValue: 20}],
+    [Count3Provider, {initialValue: 30}],
+    [Count4Provider, {initialValue: 40}],
+    [Count5Provider, {initialValue: 50}],
+  ] as const;
+
+  return providers.reduceRight(
+    (children, [Component, props]) =>
+      createElement(Component, props, children),
+      <Parent />
+      );
+}
+```
+
+-> reduceRight를 사용해 공급자 트리를 구성함
