@@ -1,1 +1,257 @@
 # 리액트 컨텍스트와 구독을 이용한 컴포넌트 상태 공유
+
+리액트 컨텍스트와 구독을 합친 새로운 방법을 사용할 때의 이점
+
+- 컨텍스트는 하위 트리에 전역 상태를 제공할 수 있고 컨텍스트 공급자를 중첩하는 것이 가능함  
+  컨텍스트를 사용하면 리액트 컴포넌트 라이프사이클 내에서 `useState` 같은 훅으로 전역 상태를 제어할 수 있음
+- 구독을 사용하면 단일 컨텍스트로는 불가능한 리렌더링 문제를 해결할 수 있다.
+
+### 모듈 상태의 한계
+
+모듈 상태는 리액트 컴포넌트 외부에 존재하는 전역으로 정의된 싱글턴이므로, 컴포넌트 트리나 하위 트리마다 다른 상태를 가질 수 없다는 한계가 있음
+
+#### 1) 모듈 상태 공유하기 위한 `createStore` 함수
+
+```js
+const createStore = (initialState) => {
+  let state = initialState;
+
+  const callbacks = new Set();
+  const getState = () => state;
+  const setState = (nextState) => {
+    state = typeof nextState === "function" ? nextState(state) : nextState;
+    callbacks.forEach((callback) => callback());
+  };
+
+  const subscribe = (callback) => {
+    callbacks.add(callback);
+    return () => {
+      // unsubscribe
+      callbacks.delete(callback);
+    };
+  };
+
+  return { getState, setState, subscribe };
+};
+
+export const store = createStore({ count: 0 });
+```
+
+#### 2) `useStore` 훅을 통해 모듈 상태 사용하기
+
+```js
+const Counter = () => {
+  const [state, setState] = useStore(store);
+
+  const inc = () => {
+    setState((prev) => ({
+      ...prev,
+      count: prev.count + 1,
+    }));
+  };
+
+  return (
+    <div>
+      <p>{state.count}</p>
+      <button onClick={inc}>+1</button>
+    </div>
+  );
+};
+
+const Component = () => {
+  return (
+    <>
+      <Counter />
+      <Counter />
+    </>
+  );
+};
+```
+
+#### 3) 새로운 store 생성하기
+
+```jsx
+export const store2 = createStore({ count: 0 });
+
+const Counter2 = () => {
+  const [state, setState] = useStore(store2);
+
+  const inc = () => {
+    setState((prev) => ({
+      ...prev,
+      count: prev.count + 1,
+    }));
+  };
+
+  return (
+    <div>
+      <p>{state.count}</p>
+      <button onClick={inc}>+1</button>
+    </div>
+  );
+};
+
+const Component2 = () => {
+  return (
+    <>
+      <Counter2 />
+      <Counter2 />
+    </>
+  );
+};
+```
+
+** Counter는 재사용가능해야할 것 같지만, 모듈 상태는 리액트 외부에서 정의되므로 재사용이 불가능하며, 이것이 모듈 상태의 한계임 **
+
+#### 4) `Counter` 컴포넌트를 다른 스토어에서 재사용하기
+
+### 컨텍스트 사용이 필요한 시점
+
+컴포넌트 트리에 컨텍스트 Provider가 없는 경우에는 기본값을 사용함  
+컨텍스트 공급자는 기본 컨텍스트 값, 부모 공급자가 제공하는 값이 있는 경우 이 값을 재정의(override)하는 메서드라고 볼 수 있음
+
+**전역 상태를 위한 컨텍스트가 필요한 경우는 서로 다른 하위 트리에 서로 다른 값을 제공해야 하는 경우에 필요함**
+
+### 컨텍스트와 구독 패턴
+
+하나의 컨텍스트를 사용해 전역 상태 값을 전파하는 것은 불필요한 리렌더링이 발생함
+구독을 이용한 모듈 상태는 전체 컴포넌트 트리에 대해 하나의 값만 제공한다는 문제가 있음
+
+#### 1) 구독 패턴 코드 작성
+
+```js
+type Store<T> = {
+  getState: () => T;
+  setState: (action: T | ((prev: T) => T)) => void;
+  subscribe: (callback: () => void) => () => void;
+};
+
+const createStore = <T extends unknown>(initialState: T): Store<T> => {
+  let state = initialState;
+  const callbacks = new Set<() => void>();
+  const getState = () => state;
+  const setState = (action: T | ((prev: T) => T)) => {
+    state =
+      typeof action === "function"
+        ? (nextState as (prev: T) => T)(state)
+        : nextState;
+
+    callbacks.forEach((callback) => callback());
+  };
+
+  const subscribe = (callback: () => void) => {
+    callbacks.add(callback);
+    return () => {
+      callbacks.delete(callback);
+    };
+  };
+
+  return { getState, setState, subscribe };
+};
+```
+
+#### 2) 컨텍스트를 생성하기
+
+```ts
+type State = { count: number; text?: string };
+
+// Context 생성
+const StoreContext = createContext<Store<State>>(
+  createStore({ count: 0, text: "hello" })
+);
+
+// Provider 생성
+const StoreProvider = ({
+  initialState,
+  children,
+}: PropsWithChildren<{ initialState: State }>) => {
+  const storeRef = useRef<Store<State>>(); // 스토어 객체가 첫 번째 렌더링에서 한 번만 초기화되도록
+
+  if (!storeRef.current) {
+    storeRef.current = createStore(initialState);
+  }
+
+  return (
+    <StoreContext.Provider value={storeRef.current}>
+      {children}
+    </StoreContext.Provider>
+  );
+};
+```
+
+#### 3) `useSelector` 훅 구현하기
+
+```ts
+const useSelector = <S extends unknown>(selector: (state: State) => S) => {
+  const store = useContext(StoreContext);
+  return useSubscription(
+    useMemo(
+      () => ({
+        getCurrentValue: () => selector(store.getState()),
+        subscribe: store.subscribe,
+      }),
+      [store, selector]
+    )
+  );
+};
+```
+
+- `useContext`와 `useSubscription` 훅을 사용하여 컨텍스트와 구독의 이점을 모두 누릴 수 있음
+
+#### 4) `useSetState` 훅 구현하기 - 컨텍스트를 사용해서 상태를 갱신하는 방법을 제공하기 위함임 (모듈 상태와 다른 점)
+
+```ts
+const useSetState = () => {
+  const store = useContext(StoreContext);
+  return store.setState;
+};
+```
+
+#### 5) `Counter` 컴포넌트 구현하기
+
+```ts
+// 이 함수가 컴포넌트 내부에 있을 경우, useSelector 훅내의 useMemo가 갱신되므로 외부에 둬야함
+// 단, useCallback으로 감싸면 내부에 둘 수 있게 됨
+const selectCount = (state: State) => state.count;
+
+const Counter = () => {
+  const count = useSelector(selectCount);
+  const setState = useSetState();
+
+  const inc = () => {
+    setState((prev) => ({
+      ...prev,
+      count: prev.count + 1,
+    }));
+  };
+
+  return (
+    <div>
+      <p>{count}</p>
+      <button onClick={inc}>+1</button>
+    </div>
+  );
+};
+```
+
+#### 6. 공급자를 사용
+
+```tsx
+const App = () => {
+  <>
+    <h1>Using default store</h1>
+    <Counter />
+    <Counter />
+    <StoreProvider initialState={{ count: 10 }}>
+      <h1>Using custom store</h1>
+      <Counter />
+      <Counter />
+      <StoreProvider initialState={{ count: 20 }}>
+        <h1>Using custom store 2</h1>
+        <Counter />
+        <Counter />
+      </StoreProvider>
+    </StoreProvider>
+  </>;
+};
+```
