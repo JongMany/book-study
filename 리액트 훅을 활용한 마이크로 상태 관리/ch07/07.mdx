@@ -1,1 +1,77 @@
 # 사용 사례 시나리오 1: Zustand
+
+Zustand는 주로 리액트의 모듈 상태를 생성하도록 설계된 작은 라이브러리이며,  
+상태 객체를 수정할 수 없고 항상 새로 만들어야 하는 불변 갱신 모델을 기반으로 한다.
+
+### **모듈 상태와 불변 상태 이해하기**
+
+Zustand는 상태를 유지하는 store를 만드는데 사용되는 라이브러리.  
+주로 모듈 상태를 위해 설계되었으므로 모듈에서 store를 정의하고 내보내는 것을 할 수 있음.
+
+라이브러리르는 상태 객체 속성을 갱신할 수 없는 불변 상태 모델을 기반으로 하며, 상태를 변경하기 위해서는 새 객체를 생성해서 대체해야 하고, 수정하지 않은 객체는 재사용해야 한다.
+
+> 불변 상태 모델의 장점: 상태 객체의 참조에 대한 동등성만 확인하면 변경 여부를 알 수 있기에 객체의 값 전체를 확인할 필요가 없음
+
+```tsx
+import create from "zustand";
+
+export const store = create(() => ({ count: 0 }));
+
+// getState, setState, subscribe 기능을 사용할 수 있다.
+console.log(store.getState()); // { count: 0 }
+store.setState({ count: 1 });
+console.log(store.getState()); // { count: 1 }
+
+store.subscribe(() => {
+  console.log("Store state is change");
+});
+```
+
+subscribe() 함수를 통해 store의 상태가 변경될 때마다 호출되는 콜백함수를 등록할 수 있으며, 이는 리액트 훅을 구현하기 위해 중요한 함수다.
+
+상태는 불변이므로, 상태 객체의 속성을 직접 수정할 수 없다.
+
+```tsx
+const state = store.getState();
+state.count = 2; // 변경되지 않음
+```
+
+함수를 사용하여 상태를 변경할 수 있다.
+이를 통해 이전 상태를 기반으로 상태를 변경할 수 있다.
+
+```tsx
+store.setState((prev) => ({ count: prev.count + 1 }));
+```
+
+상태는 여러 속성을 가질 수 있다.
+store.setState()는 새 상태와 이전 상태를 병합하므로, 설정하려는 속성만 지정해도 된다.
+
+> `setState()`는 내부적으로 `Object.assign()`으로 구현되었
+> Object.assign({}, oldState, newState);
+
+```tsx
+export const store = create(() => ({
+  count: 0,
+  text: "hello",
+}));
+
+// 상태는 불변으로 변경해야 함
+store.setStore({ count: 1, text: "hello" });
+
+// 설정하려는 속성만 지정해도 된다.
+store.setStore({ count: 2 });
+```
+
+Zustand는 불변 상태 모델 및 구독이라는 아이디어를 중심으로 설계뙨 작고 가벼운 라이브러임.
+
+### **리렌더링 최적화를 위한 리액트 훅 추가하기**
+
+### **읽기 상태와 갱신 상태 사용하기**
+
+### **구조화된 데이터 다루기**
+
+### **라이브러리와 접근 방식의 장단점**
+
+```
+
+```
