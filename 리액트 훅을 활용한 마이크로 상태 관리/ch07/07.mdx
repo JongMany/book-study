@@ -66,12 +66,275 @@ Zustand는 불변 상태 모델 및 구독이라는 아이디어를 중심으로
 
 ### **리렌더링 최적화를 위한 리액트 훅 추가하기**
 
+전역 상태를 사용할 때, 모든 컴포넌트가 전역 상태를 사용하는 것은 아니므로 리렌더링 최적화가 필요함
+
+```tsx
+// store.ts
+import create from "zustand";
+
+export const store = create(() => ({
+  count: 0,
+  text: "hello",
+}));
+
+// Component.tsx
+import { useStore } from "./store";
+
+const Component = () => {
+  const { count } = useStore();
+  return <div>{count}</div>;
+};
+```
+
+컴포넌트는 count 값을 보여주면서 store 상태가 변경될 때마다 리렌더링된다.  
+화면과 관련 없는 text 값을 변경하더라도 리렌더링이 된다.
+
+리렌러딩을 피해야 하는 경우, 선택자 함수를 통해 필요한 상태만 선택하여 사용할 수 있다. (수동 렌더링 최적화)
+
+```tsx
+// Component.tsx
+import { useStore } from "./store";
+
+const Component = () => {
+  const count = useStore((state) => state.count);
+  return <div>{count}</div>;
+};
+```
+
+다만, 선택자 함수를 잘못 정의하면 리렌더링이 발생할 수 있으므로 주의해야 한다.
+
+```tsx
+// Component.tsx
+import { useStore } from "./store";
+
+const Component = () => {
+  const [{ count }] = useStore((state) => [{ count: state.count }]);
+  return <div>{count}</div>;
+};
+```
+
 ### **읽기 상태와 갱신 상태 사용하기**
+
+#### 1) 상태 정의
+
+```tsx
+type StoreState = {
+  count1: number;
+  count2: number;
+};
+
+const useStore = create<StoreState>(() => {
+  count1: 0,
+  count2: 0,
+});
+```
+
+#### 2) 컴포넌트에서 상태 사용하기
+
+```tsx
+const selectCount1 = (state: StoreState) => state.count1;
+
+const Counter1 = () => {
+  const count1 = useStore(selectCount1);
+  const inc1 = () => {
+    useStore.setState((prev) => ({ count1: prev.count1 + 1 }));
+  };
+
+  return (
+    <div>
+      <div>{count1}</div>
+      <button onClick={inc1}>+1</button>
+    </div>
+  );
+};
+```
+
+#### 3) 리팩토링: store에 setState 관련 함수를 미리 정의하기
+
+```tsx
+type StoreState = {
+  count1: number;
+  count2: number;
+  inc1: () => void;
+  inc2: () => void;
+};
+
+const useStore = create<StoreState>((set) => ({
+  count1: 0,
+  count2: 0,
+  inc1: () => set((prev) => ({ count1: prev.count1 + 1 })),
+  inc2: () => set((prev) => ({ count2: prev.count2 + 1 })),
+}));
+```
+
+이 방식을 활용해 Counter2 컴포넌트 만들기
+
+```tsx
+const selectCount = (state: StoreState) => state.count2;
+const selectInc = (state: StoreState) => state.inc2;
+
+const Counter2 = () => {
+  const count2 = useStore(selectCount);
+  const inc2 = useStore(selectInc);
+
+  return (
+    <div>
+      <div>{count2}</div>
+      <button onClick={inc2}>+1</button>
+    </div>
+  );
+};
+```
+
+#### 4) 파생상태 사용하기
+
+```tsx
+const selectTotal = (state: StoreState) => state.count1 + state.count2;
+
+const Total = () => {
+  const total = useStore(selectTotal);
+
+  return <div>{total}</div>;
+};
+```
 
 ### **구조화된 데이터 다루기**
 
+#### 1) TodoList 상태 정의하기
+
+```tsx
+type Todo = {
+  id: number;
+  title: string;
+  done: boolean;
+};
+
+type StoreState = {
+  todos: Todo[];
+  addTodo: (title: string) => void;
+  toggleTodo: (id: number) => void;
+  removeTodo: (id: number) => void;
+};
+
+let nextId = 0;
+const useStore = create<StoreState>((set) => ({
+  todos: [],
+  addTodo: (title) =>
+    set((prev) => ({
+      todos: [...prev.todos, { id: nextId++, title, done: false }],
+    })),
+  toggleTodo: (id) =>
+    set((prev) => ({
+      todos: prev.todos.map((todo) =>
+        todo.id === id ? { ...todo, done: !todo.done } : todo
+      ),
+    })),
+  removeTodo: (id) =>
+    set((prev) => ({
+      todos: prev.todos.filter((todo) => todo.id !== id),
+    })),
+}));
+```
+
+#### 2) TodoList 컴포넌트 만들기
+
+```tsx
+type Props = {
+  todo: Todo;
+};
+const selectRemoveTodo = (state: StoreState) => state.removeTodo;
+const selectToggleTodo = (state: StoreState) => state.toggleTodo;
+
+const TodoItem = ({ todo }: Props) => {
+  const removeTodo = useStore(selectRemoveTodo);
+  const toggleTodo = useStore(selectToggleTodo);
+
+  return (
+    <div>
+      <input
+        type="checkbox"
+        checked={todo.done}
+        onChange={() => toggleTodo(todo.id)}
+      />
+      <span>{todo.title}</span>
+      <button onClick={() => removeTodo(todo.id)}>삭제</button>
+    </div>
+  );
+};
+
+const MemoedTodoItem = memo(TodoItem);
+```
+
+```tsx
+const selectTodos = (state: StoreState) => state.todos;
+
+const TodoList = () => {
+  const todos = useStore(selectTodos);
+  return (
+    <div>
+      {todos.map((todo) => (
+        <MemoedTodoItem key={todo.id} todo={todo} />
+      ))}
+    </div>
+  );
+};
+```
+
+#### 3) TodoForm 컴포넌트 만들기
+
+```tsx
+const selectAddTodo = (state: StoreState) => state.addTodo;
+
+const TodoForm = () => {
+  const addTodo = useStore(selectAddTodo);
+  const [title, setTitle] = useState("");
+
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    addTodo(title);
+    setTitle("");
+  };
+
+  return (
+    <form onSubmit={onSubmit}>
+      <input
+        type="text"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
+      <button type="submit" disabled={!text}>
+        추가
+      </button>
+    </form>
+  );
+};
+```
+
+#### 4) TodoList와 TodoForm 조합하기
+
+```tsx
+const App = () => {
+  return (
+    <div>
+      <TodoForm />
+      <TodoList />
+    </div>
+  );
+};
+```
+
 ### **라이브러리와 접근 방식의 장단점**
 
-```
+Zustand의 읽기 및 쓰기 상태
 
-```
+- 읽기 상태: 리렌더링을 최적화하기 위해 선택자 함수를 사용
+- 쓰기 상태: 불변 상태 모델을 기반으로 함
+
+Zustand의 장점
+
+- 리액트와 동일한 모델(객체 불변성 모델)을 사용해 사용이 단순하다.
+- 번들크기가 작다.
+
+Zustand의 단점
+
+- 선택자를 이용한 수동 렌더링 최적화 (보일러플레이트)
