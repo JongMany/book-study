@@ -1,4 +1,80 @@
 # 새로운 인터페이스로 기존 루틴 부르기
 
 루틴을 호출해야 하는데 기존 인터페이스 때문에 어렵거나 복잡하거나, 혼란스럽거나 지루해지곤 한다.  
-이 모든 경우에 호출하고 싶은 인터페이스를 새롭게 구현해서 호출하자.
+이 모든 경우에 호출하고 싶은 인터페이스를 새롭게 구현해서 호출하자.  
+새로운 인터페이스는 기존 인터페이스를 호출하는 것으로 구현  
+➡️ 기존 인터페이스를 호출하는 코드를 새 인터페이스를 호출하도록 모두 이전한 후에는 이전 인터페이스를 제거하고 새 인터페이스가 직접 루틴을 구현하도록 변경할 수 있음
+
+새롭게 구현한 통로 인터페이스(pass-through interface)는 SW 설계에서 작은 단위로 중추적 역할을 함.
+어떤 동작을 변경해야 할때 통로 인터페이스로 설계를 한 경우 변경하기가 수월해짐.
+
+---
+
+### 이와 유사한 작업
+
+- TDD
+- 도우미 설계: 특정 업무를 해주는 루틴, 객체, 서비스가 있다면 나머지 작업이 쉬워짐
+- 거꾸로 코딩: 루틴의 마지막 줄부터 구현하기
+
+---
+
+"새로운 인터페이스로 기존 루틴 부르기"를 통해 코드의 모듈성, 재사용성, 유지보수성을 향상시킬 수 있습니다.  
+기존에 작성된 코드(루틴 또는 함수)를 변경하지 않고 새로운 인터페이스를 만들어 호출하는 것입니다.  
+이렇게 하면 기존 코드의 안정성을 유지하면서 새로운 기능이나 사용 패턴을 도입할 수 있습니다.
+
+### 주요 개념
+
+기존 루틴: 이미 작성된 함수, 메서드, 또는 코드 블록.
+새로운 인터페이스: 기존 루틴을 호출하는 새로운 함수, 메서드 또는 클래스로, 보통 더 사용하기 쉽거나 추가적인 기능을 제공할 수 있습니다.
+
+### 예제
+
+#### 1) 함수 래핑(Wrapping Functions): 기존 함수를 새로운 인터페이스로 감싸는 방법입니다.
+
+```python
+def old_function(x, y):
+    return x + y
+
+def new_interface(a, b):
+    # 기존 함수를 호출하고 결과를 반환
+    result = old_function(a, b)
+    # 추가적인 작업을 수행할 수 있음
+    return result
+
+# 사용 예제
+print(new_interface(3, 4))  # 7
+```
+
+#### 2) 클래스 인터페이스: 클래스를 사용하여 더 복잡한 인터페이스를 만들 수도 있습니다.
+
+```py
+class OldCalculator:
+    def add(self, x, y):
+        return x + y
+
+    def subtract(self, x, y):
+        return x - y
+
+class NewCalculatorInterface:
+    def __init__(self):
+        self.calculator = OldCalculator()
+
+    def add_numbers(self, a, b):
+        return self.calculator.add(a, b)
+
+    def subtract_numbers(self, a, b):
+        return self.calculator.subtract(a, b)
+
+    # 새로운 기능 추가 가능
+    def multiply_numbers(self, a, b):
+        return a * b
+
+# 사용 예제
+new_calc = NewCalculatorInterface()
+print(new_calc.add_numbers(5, 3))  # 8
+print(new_calc.subtract_numbers(10, 4))  # 6
+print(new_calc.multiply_numbers(6, 7))  # 42
+
+```
+
+위 예제에서 NewCalculatorInterface 클래스는 OldCalculator 클래스를 감싸서 새로운 인터페이스를 제공하고, 추가적인 메서드(multiply_numbers)도 추가했습니다.
