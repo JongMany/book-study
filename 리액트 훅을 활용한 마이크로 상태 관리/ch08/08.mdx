@@ -331,6 +331,56 @@ const App = () => (
 
 ### **Jotai가 아톰 값을 저장하는 방식 이해하기**
 
+```tsx
+const countAtom = atom(0);
+```
+
+`countAtom`은 아톰 동작을 나타내는 몇 가지 속성을 가진 객체이자 원시 아톰임.  
+원시 아톰은 `useState`처럼 동작하도록 설계 됨
+
+**중요한 점: `countAtom`같은 아톰 구성 객체가 직접 값을 가지지 않고 아톰 값을 저장하는 `store`가 따로 존재함**
+
+- `store`는 키가 아톰 구성 객체이고, 값이 아톰 값인 `WeakMap` 객체가 있음
+
+`useAtom`을 사용하면 기본적으로 모듈 수준에서 정의된 기본 `store`를 사용하지만 Jotai는 Provider라는 컴포넌트를 제공하며, 컴포넌트 레벨에서 `store`를 생성할 수 있음.
+
+#### 1) Provider를 사용한 아톰 생성
+
+```tsx
+import { atom, useAtom, Provider } from "jotai";
+const countAtom = atom(0);
+
+const Counter = () => {
+  const [count, setCount] = useAtom(countAtom);
+  const inc = () => setCount((c) => c + 1);
+  return (
+    <>
+      {count} <button onClick={inc}>+1</button>
+    </>
+  );
+};
+
+// Provider를 사용해 컴포넌트 레벨에서 store를 생성
+const App = () => (
+  <>
+    <Provider>
+      <Counter />
+      <Counter />
+    </Provider>
+    <Provider>
+      <Counter />
+      <Counter />
+    </Provider>
+  </>
+);
+```
+
+`App`의 두 `Provider` 컴포넌트는 서로 다른 스토어를 사용하므로 다른 `Provider`의 `Counter` 컴포넌트에 사용된 `countAtom`은 서로 다르다! (공유가 안된다)
+
+**중요한 점 > `countAtom` 자체가 값을 가지고 있지 않으므로 여러 `Provider` 컴포넌트에서 재사용이 가능하다! (모듈 상태와의 차이점) **
+
+아톰 구성은 값을 가지지 않는 정의일 뿐이므로 재사용할 수 있음.
+
 ### **배열 구조 추가하기**
 
 ### **Jotai의 다양한 기능 사용하기**
