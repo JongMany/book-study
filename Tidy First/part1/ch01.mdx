@@ -1,0 +1,119 @@
+# 보호 구문
+
+### 보호 구문이란?
+
+조건문 안의 조건문을 중첩으로 사용하기 보다 보호구문을 활용하면 코드를 읽는 사람이 로직을 이해하는데 편해진다.
+
+> 저자의 Tip  
+> 참인 경로, 거짓인 경로 모두 정상 동작일 경우, if...else 절 활용  
+> 한쪽만 정상, 다른 한쪽은 비정상인 경우 비정상인 경우를 return하여 함수를 빠져나온다. (=== 보호 구문 )
+
+AS-IS
+
+```ts
+if(조건)
+  if(다른 조건 부정)
+    코드
+```
+
+TO-BE
+
+```ts
+if(조건 부정) return
+if(다른 조건 부정) return
+
+코드
+```
+
+이 코드를 해석할 때는, 코드의 세부 사항을 살펴보기 전에 염두에 두어야 할 몇가지 전제조건이 있다고 말하는 것과 같음
+
+다만 보호 구문을 남용하지 말것! (대량의 보호구문은 가독성이 떨어짐)  
+복잡합 코드를 경우에 맞춰 나누기 위해서는 세심한 주의가 필요함
+
+---
+
+#### 정리하기 어려운 코드
+
+```ts
+if (조건)
+  코드
+다른 코드
+```
+
+- 이 경우, 처음 2줄을 도우미(Helper) 메서드로 추출한 다음에 보호 구문으로 코드를 정리할 수도 있긴 함.
+
+<details>
+  <summary>도우미 메서드란</summary>
+
+도우미 메서드(helper method)는 다른 메서드의 기능을 보조하거나 반복적인 작업을 처리하기 위해 사용되는 메서드입니다. 도우미 메서드는 코드의 재사용성을 높이고, 주요 로직을 더 깔끔하고 읽기 쉽게 만드는 데 도움을 줍니다.
+
+예를 들어, 특정 클래스의 메서드가 복잡한 작업을 수행해야 할 때, 그 작업의 일부를 분리하여 도우미 메서드로 만들 수 있습니다. 이렇게 하면 코드가 더 모듈화되고 유지보수하기 쉬워집니다.
+
+예시 코드
+
+```py
+class Calculator:
+  def add(self, a, b):
+      return a + b
+
+  def subtract(self, a, b):
+      return a - b
+
+  def multiply(self, a, b):
+      return a * b
+
+  def divide(self, a, b):
+      if self._is_zero(b):
+          raise ValueError("Cannot divide by zero!")
+      return a / b
+
+  def _is_zero(self, value):
+      return value == 0
+
+# 사용 예제
+calc = Calculator()
+print(calc.add(5, 3))  # 8
+print(calc.divide(10, 2))  # 5.0
+```
+
+- 위 코드에서 \_is_zero 메서드는 다른 메서드(divide)에서 사용되는 도우미 메서드입니다.
+- 이 메서드는 divide 메서드에서 분할 작업 전에 0으로 나누는지 여부를 확인하는 역할을 합니다.
+- 도우미 메서드를 통해 코드를 더 읽기 쉽게 만들고, 반복적인 작업을 줄일 수 있습니다.
+
+</details>
+
+**항상 그리고, 반드시 작은 단계를 거쳐 코드를 정리하기!**
+
+---
+
+예시 코드: https://github.com/Bogdanp/dramatiq/pull/470
+AS-IS
+
+```py
+if queue_name not in self.queues:
+  self.emit_before("declare_queue", queue_name)
+  self.queues[queue_name] = Queue()
+  self.emit_after("declare_queue", queue_name)
+
+  delayed_name = dq_name(queue_name)
+  self.queues[delayed_name] = Queue()
+  self.delay_queues.add(delayed_name)
+  self.emit_after("declare_delay_queue", delayed_name)
+
+```
+
+TO-BE
+
+```py
+if queue_name in self.queues:
+  return
+
+self.emit_before("declare_queue", queue_name)
+self.queues[queue_name] = Queue()
+self.emit_after("declare_queue", queue_name)
+
+delayed_name = dq_name(queue_name)
+self.queues[delayed_name] = Queue()
+self.delay_queues.add(delayed_name)
+self.emit_after("declare_delay_queue", delayed_name)
+```
