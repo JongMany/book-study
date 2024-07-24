@@ -1,1 +1,336 @@
 # 사용 사례 시나리오 2: Jotai
+
+Jotai는 컴포넌트 상태를 사용하며 불변 상태 모델이다.  
+또한, useState, useReducer와 함께 상태의 작은 조각인 아톰이라고 불리는 것을 모델로 삼음.
+
+아톰을 사용하면 라이브러리가 의존성을 추적하고 의존성에 따라 리렌더링을 감지할 수 있으며,  
+내부적으로 컨텍스트를 사용하고 아톰 자체는 값을 가지지 않기 때문에 모듈 상태와 달리 한 번 정의한 아톰을 재사용할 수 있다.
+
+배열 구조로 리렌더링을 최적화하는 기법인 Atoms-in-Atom 패턴을 사용한다.
+
+### **Jotai 이해하기**
+
+```tsx
+const Counter1 = () => {
+  const [count, setCount] = useState(0);
+  const inc = () => setCount((c) => c + 1);
+
+  return (
+    <div>
+      <p>{count}</p>
+      <button onClick={inc}>증가</button>
+    </div>
+  );
+};
+
+const Counter2 = () => {
+  const [count, setCount] = useState(0);
+  const inc = () => setCount((c) => c + 1);
+
+  return (
+    <div>
+      <p>{count}</p>
+      <button onClick={inc}>증가</button>
+    </div>
+  );
+};
+```
+
+두 컴포넌트는 고유한 지역 상태가 있으므로, 컴포넌트에서 보여주는 숫자는 서로 격리되어 있음.
+
+<details>
+<summary>두 컴포넌트가 하나의 카운트 상태를 공유하게 하려면?</summary>
+
+상태를 상위 컴포넌트로 끌어올리고, 컨텍스트를 사용해 전달하기.
+
+```tsx
+// Context + Provider
+const Counter = createContext();
+
+const CountProvider = ({ children }) => (
+  <Counter.Provider value={useState(0)}>{children}</Counter.Provider>
+);
+
+// Consumer
+const Counter1 = () => {
+  const [count, setCount] = useContext(Counter);
+  const inc = () => setCount((c) => c + 1);
+
+  return (
+    <>
+      {count}
+      <button onClick={inc}>+1</button>
+    </>
+  );
+};
+
+const Counter2 = () => {
+  const [count, setCount] = useContext(Counter);
+  const inc = () => setCount((c) => c + 1);
+
+  return (
+    <>
+      {count}
+      <button onClick={inc}>+1</button>
+    </>
+  );
+};
+
+// App
+const App = () => (
+  <CountProvider>
+    <Counter1 />
+    <Counter2 />
+  </CountProvider>
+);
+```
+
+컨텍스트를 통해 Count 상태를 공유할 수 있고, 이 상태가 두 컴포넌트에서 관리되고 있다.
+
+</details>
+
+컨텍스트와 비교했을 때, Jotai는 2가지 장점이 존재함
+
+1. 구문 단순성
+2. 동적 아톰 생성
+
+<details>
+<summary> 1) 구문 단순성</summary>
+
+아톰은 하나의 상태를 나타냄. 일반적으로 작은 상태 조각이면서 리렌더링을 감지하는 최소 단위임
+`atom` 함수는 아톰 정의를 생성하며, 초깃값을 지정하는 인수 하나를 받음
+
+```tsx
+import { atom, useAtom } from "jotai";
+
+const countAtom = atom(0);
+```
+
+카운터 컴포넌트에 아톰을 사용하기
+
+```tsx
+const Counter1 = () => {
+  const [count, setCount] = useAtom(countAtom);
+  const inc = () => setCount((c) => c + 1);
+
+  return (
+    <div>
+      <p>{count}</p>
+      <button onClick={inc}>증가</button>
+    </div>
+  );
+};
+
+const Counter2 = () => {
+  const [count, setCount] = useAtom(countAtom);
+  const inc = () => setCount((c) => c + 1);
+
+  return (
+    <div>
+      <p>{count}</p>
+      <button onClick={inc}>증가</button>
+    </div>
+  );
+};
+
+const App = () => (
+  <>
+    <Counter1 />
+    <Counter2 />
+  </>
+);
+```
+
+`useAtom`은 `useState`처럼 [state, setState] 형태의 튜플을 반환함
+
+또한, Context에 비해 구문이 간단하고, 상태를 공유하는 컴포넌트가 늘어나도 코드가 복잡해지지 않음
+
+</details>
+
+<details>
+<summary> 2) 동적 아톰 생성</summary>
+
+아톰은 리액트 컴포넌트 생명 주기에서 생성되거나 소멸될 수 있음.  
+다중 컨텍스트 접근 방식에서의 새로운 상태를 추가한다 = 새로운 Provider 컴포넌트를 추가한다는 것
+
+Jotai의 스토어는 기본적으로 아톰 구성 객체와 아톰 값으로 구성된 WeakMap 객체임  
+아톰 구성 객체는 atom 함수로 생성되며, atom 값은 useAtom 훅이 반환하는 값임  
+Jotai의 구독은 아톰 기반이므로, `useAtom` 훅이 store에 있는 특정 아톰을 구독한다는 것을 의미하며, 불필요한 리렌더링을 피할 수 있는 기능을 제공함
+
+</details>
+
+### **렌더링 최적화**
+
+#### 1) 구독을 이용한 모듈 상태 공유의 예제(4장)
+
+```tsx
+1) store 생성하기
+const personStore = create({
+  firstName: 'React',
+  lastName: "Hooks",
+  age: 3,
+});
+
+2) 상태를 사용하는 컴포넌트
+const selectFirstName = (state) => state.firstName;
+const selectLastName = (state) => state.lastName;
+
+// age가 변경되어도 리렌더링이 발생하지 않음
+const PersonComponent = () => {
+  const firstName = useStore(selectFirstName);
+  const lastName = useStore(selectLastName);
+  return <>
+    <p>{firstName} {lastName}</p>
+  </>;
+}
+```
+
+이러한 store와 선택자 접근 방식을 하향식 접근법이라고 함.
+
+#### 2) Jotai로 구현하기
+
+```tsx
+// atom은 리렌더링을 감지하는 단위
+const firstNameAtom = atom("React");
+const lastNameAtom = atom("Hooks");
+const ageAtom = atom(3);
+
+// PersonComponent는 ageAtom과 관련이 없으므로 ageAtom이 변경되더라도 리렌더링되지 않음
+const PersonComponent = () => {
+  const [firstName] = useAtom(firstNameAtom);
+  const [lastName] = useAtom(lastNameAtom);
+  return (
+    <>
+      <p>
+        {firstName} {lastName}
+      </p>
+    </>
+  );
+};
+```
+
+아톰을 원시타입만큼 작게 만들면 조작해야 할 아톰이 많을 수 있음  
+Jotai에서는 기존 아톰에서 또 다른 아톰을 만들 수 있는 파생 아톰 개념을 제공함
+
+#### 3) 파생 아톰 사용하기
+
+```tsx
+const personAtom = atom((get) => ({
+  firstName: get(firstNameAtom),
+  lastName: get(lastNameAtom),
+  age: get(ageAtom),
+}));
+
+// age가 변경되면 불필요한 렌더링 발생
+const PersonComponent = () => {
+  const [person] = useAtom(personAtom);
+  return (
+    <>
+      <p>
+        {person.firstName} {person.lastName}
+      </p>
+    </>
+  );
+};
+```
+
+`atom` 함수의 첫번째 인자로 들어가는 `read` 함수는 다른 아톰을 참조하고, 그 값을 가져올 수 있는 `get`이라는 인자를 받음  
+atom에 있는 속성들에 해당하는 atom들이 변경될 때마다 갱신되며 이를 의존성 추적이라고 한다.
+
+> 의존성 추적은 동적이며 조건부 평가에서도 작동함  
+> `(get) => get(a) ? get(b) : get(c)`의 경우  
+> a가 참이면 a, b가 의존성이고, a가 거짓이면 a, c가 의존성이 됨
+
+#### 4) 리렌더링 최적화를 위한 리팩터링
+
+```tsx
+const fullNameAtom = atom((get) => ({
+  firstName: get(firstNameAtom),
+  lastName: get(lastNameAtom),
+});
+
+const PersonComponent = () => {
+  const [person] = useAtom(fullNameAtom);
+  return (
+    <>
+      <p>
+        {person.firstName} {person.lastName}
+      </p>
+    </>
+  );
+};
+```
+
+작은 아톰을 만들고 이를 결합해 큰 아톰을 만드는 상향식 접근법임
+
+<details>
+  <summary>스토어와 선택자 접근 방식으로 위의 예제 구현해보기</summary>
+
+```
+// 선택자
+const selectFullName = (state) => ({
+  firstName: state.firstName,
+  lastName: state.lastName,
+});
+
+const PersonComponent = () => {
+  const person = useStore(store, selectFullName);
+  return (
+    <>
+      <p>
+        {person.firstName} {person.lastName}
+      </p>
+    </>
+  );
+};
+}
+
+```
+
+하지만 이 부분에서 store의 다른 부분(firstName, lastName 이외 속성)이 변경되면 리렌더링을 유발함  
+해결방법 > 사용자가 직접 동등 함수를 만들거나, 메모이제이션을 적용하는 것임
+
+</details>
+
+#### 5) 아톰 모델의 장점
+
+아톰의 구성과 컴포넌트의 표시되는 부분을 쉽게 연관지을 수 있어 리렌더링 제어가 간단함  
+아톰을 이용한 렌더링 최적화에는 사용자 정의 동등 함수나 메모이제이션이 필요없음
+
+```tsx
+const count1Atom = atom(0);
+const count2Atom = atom(0);
+const totalATom = atom((get) => get(count1Atom) + get(count2Atom));
+
+// countAtom을 인자로 받아 아톰을 활용하는 컴포넌트
+const Counter = ({ countAtom }) => {
+  const [count, setCount] = useAtom(countAtom);
+  const inc = () => setCount((c) => c + 1);
+  return (
+    <>
+      {count} <button onClick={inc}>+1</button>
+    </>
+  );
+};
+
+const Total = () => {
+  const [total] = useAtom(totalAtom);
+  return <p>{total}</p>;
+};
+
+const App = () => (
+  <>
+    <Counter countAtom={count1Atom} />
+    +
+    <Counter countAtom={count2Atom} />
+    =
+    <Total />
+  </>
+);
+```
+
+### **Jotai가 아톰 값을 저장하는 방식 이해하기**
+
+### **배열 구조 추가하기**
+
+### **Jotai의 다양한 기능 사용하기**
