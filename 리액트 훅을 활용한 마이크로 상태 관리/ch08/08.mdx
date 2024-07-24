@@ -381,6 +381,305 @@ const App = () => (
 
 아톰 구성은 값을 가지지 않는 정의일 뿐이므로 재사용할 수 있음.
 
-### **배열 구조 추가하기**
+### **배열 구조 추가하기** - `Jotai`에서 배열 구조를 처리하는 방법을 알아보기
+
+리액트에서 배열 구조로 이뤄진 컴포넌트를 렌더링할 때 `key` 속성을 전달해야 함.
+
+```tsx
+type Todo = {
+  id: string;
+  title: string;
+  done: boolean;
+};
+
+// atom 정의
+const todosAtom = atom<Todo[]>([]);
+
+// TodoItem 컴포넌트
+type Props = {
+  todo: Todo;
+  removeTodo: (id: string) => void;
+  toggleTodo: (id: string) => void;
+};
+const TodoItem = ({ todo, removeTodo, toggleTodo }: Props) => {
+  return (
+    <div>
+      <input
+        type="checkbox"
+        checked={todo.done}
+        onChange={() => toggleTodo(todo.id)}
+      />
+      <span>{todo.title}</span>
+      <button onClick={() => removeTodo(todo.id)}>삭제</button>
+    </div>
+  );
+};
+
+const MemoedTodoItem = React.memo(TodoItem);
+```
+
+// TodoList 컴포넌트
+
+```tsx
+const TodoList = () => {
+  const [todos, setTodos] = useAtom(todosAtom);
+
+  const removeTodo = useCallback(
+    (id: string) => setTodos((prev) => prev.filter((todo) => todo.id !== id)),
+    [setTodos]
+  );
+  const toggleTodo = useCallback(
+    (id: string) =>
+      setTodos((prev) =>
+        prev.map((todo) =>
+          todo.id === id ? { ...todo, done: !todo.done } : todo
+        )
+      ),
+    [setTodos]
+  );
+
+  return (
+    <div>
+      {todos.map((todo) => (
+        <MemoedTodoItem
+          key={todo.id}
+          todo={todo}
+          removeTodo={removeTodo}
+          toggleTodo={toggleTodo}
+        />
+      ))}
+    </div>
+  );
+};
+
+// NewTodo 컴포넌트
+const NewTodo = () => {
+  const [_, setTodos] = useAtom(todosAtom);
+  const [text, setText] = useState("");
+  const onClick = () => {
+    setTodos((prev) => [...prev, { id: nanoid(), title: text, done: false }]);
+    setText("");
+  };
+
+  return (
+    <div>
+      <input
+        type="text"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <button onClick={onClick} disabled={!text}>
+        추가
+      </button>
+    </div>
+  );
+};
+
+// App 컴포넌트
+const App = () => (
+  <>
+    <TodoList />
+    <NewTodo />
+  </>
+);
+```
+
+위 코드의 문제점
+
+1. 단일 요소를 변경하기 위해 todos 배열 전체를 갱신해야 함.  
+   `toggleTodo` 함수에서는 모든 요소를 순회하며 하나의 요소만 변경하는데 아톰 모델에서 하나의 요소를 간단히 변경할 수 있으면 좋음.  
+   `todos` 배열의 요소 변경시 `TodoList`가 리렌더링됨 (하지만 `MemoedTodoItem`은 리렌더링되지 않음)
+2. 요소의 `id` 값을 map 함수의 인덱스로 사용하는 것은 좋지 않음.
+
+이 문제를 해결하기 위해 아톰 구성을 다른 아톰 값에 넣는 Atoms-in-Atom을 제시함
+
+```
+// Entity
+type Todo = {
+  title: string;
+  done: boolean;
+};
+
+
+// Jotai의 PrimitiveAtom 타입을 활용해 TodoAtom 타입을 생성
+type TodoAtom = PrimitiveAtom<Todo>;
+
+const todoAtomsAtom = atom<TodoAtom[]>([]); // TodoAtom 배열을 가지는 아톰
+
+// TodoItem 컴포넌트
+type Props = {
+  todoAtom: TodoAtom;
+  remove: (todoAtom: TodoAtom) => void;
+};
+
+const TodoItem = ({
+  todoAtom,
+  remove,
+}: Props) => {
+  const [todo, setTodo] = useAtom(todoAtom);
+  return (
+    <div>
+      <input
+        type="checkbox"
+        checked={todo.done}
+        onChange={() => setTodo((prev) => ({ ...prev, done: !prev.done }))}
+      />
+      <span>{todo.title}</span>
+      <button onClick={() => remove(todoAtom)}>삭제</button>
+    </div>
+  )
+};
+
+const MemoedTodoItem = React.memo(TodoItem);
+
+// TodoList 컴포넌트
+const TodoList = () => {
+  const [todoAtoms, setTodoAtoms] = useAtom(todoAtomsAtom);
+  const remove = useCallback(
+    (todoAtom: TodoAtom) =>
+      setTodoAtoms((prev) => prev.filter((atom) => atom !== todoAtom)),
+    [setTodoAtoms]
+  );
+
+  return (
+    <div>
+      // 아톰 구성은 문자열로 평가될 때 유일한 식별자(unique identifier; UID)를 반환
+      {todoAtoms.map((todoAtom) => (
+        <MemoedTodoItem key={`${todoAtom}`} todoAtom={todoAtom} remove={remove} />
+      ))}
+    </div>
+  );
+};
+
+// NewTodo 컴포넌트
+const NewTodo = () => {
+  const [, setTodoAtoms] = useAtom(todoAtomsAtom);
+  const [text, setText] = useState("");
+  const onClick = () => {
+    setTodoAtoms((prev) => [
+      ...prev,
+      atom<Todo>({ title: text, done: false }),
+    ]);
+    setText("");
+  };
+
+  return (
+    <div>
+      <input
+        type="text"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <button onClick={onClick} disabled={!text}>
+        추가
+      </button>
+    </div>
+  )
+}
+
+// App 컴포넌트
+const App = () => (
+  <>
+    <TodoList />
+    <NewTodo />
+  </>
+);
+```
+
+`TodoList` 컴포넌트 동작은 이전 예제와 다름.  
+`Atoms-in-Atom`을 다루기 때문에 배열 요소 중 하나가 `toggleTodo`를 통해 갱신되더라도 `todoAtomsAtom`은 변경되지 않음. ➡️ 자연스럽게 리렌더링을 줄일 수 있음
+
+Atoms-in-Atom 패턴의 특징
+
+1. 배열 아톰은 아톰 요소의 배열을 보관하는데 사용됨
+2. 배열에 새로운 요소를 추가할 때는 `atom` 함수를 사용해 새로운 아톰을 생성하고, 이를 배열 아톰에 추가함
+3. 아톰 구성은 문자열로 평가할 수 있으며, UID를 반환함
+4. 요소를 렌더링하는 컴포넌트는 각 컴포넌트에서 아톰요소를 사용함. 이를 통해 요소 값을 쉽게 변경할 수 있고, 리렌더링을 자연스럽게 피할 수 있음
 
 ### **Jotai의 다양한 기능 사용하기**
+
+#### 1) 아톰의 `write` 함수 정의
+
+```tsx
+const countAtom = atom(0);
+
+const doubledCountAtom = atom((get) => get(countAtom) * 2);
+```
+
+- `countAtom`은 다른 아톰에서 파생되지 않았으므로 원시 아톰이며,  
+  원시 아톰은 값을 변경할 수 있는 쓰기 가능한 아톰임
+- `doubledCountAtom`은 `countAtom`을 참조하고 있으므로 읽기 전용 아톰임  
+  `countAtom`의 값이 변경될 때 함께 변경됨
+
+쓰기 가능한 함수로 만들기 위해서는? `write` 함수를 사용하기
+
+```tsx
+const doubledCountAtom = atom(
+  (get) => get(countAtom) * 2, // read 함수
+  (get, set, action: number) => set(countAtom, action / 2) // write 함수
+);
+```
+
+인자
+
+- get: 아톰의 값을 반환하는 함수
+- set: 아톰의 값을 변경하는 함수
+- action: 아톰을 갱신할 때 받을 임의의 값
+
+기술적으로 `write` 함수를 통해 원시 아톰을 구현할 수 있음
+
+```tsx
+const anotherCountAtom = atom(
+  (get) => get(countAtom),
+  (get, set, action: number) => {
+    const nextCount =
+      typeof action === "function" ? action(get(countAtom)) : action;
+    set(countAtom, nextCount);
+    console.log("countAtom이 변경되었습니다.", nextCount);
+  }
+);
+```
+
+#### 2) 액션 아톰 사용하기
+
+상태를 변경하는 코드를 위해 함수 또는 함수 집합을 만드는 경우가 존재함.  
+이러한 목적으로 아톰을 사용할 수 있고 이를 액션 아톰이라고 부름
+
+액션 아톰을 위해서는 atom 함수의 두번째 인자인 `write` 함수만 사용함.
+
+```tsx
+const countAtom = atom(0);
+
+const incrementAtom = atom(null, (get, set) =>
+  set(countAtom, (prev) => prev + 1)
+);
+
+const IncrementButton = () => {
+  const [, increment] = useAtom(incrementAtom);
+  return <button onClick={increment}>증가</button>;
+};
+```
+
+#### 3) 아톰의 `onMount` 함수 사용하기
+
+아톰이 사용되기 시작할 때 특정 로직을 실행하고 싶은 경우가 존재함 ex) 외부 데이터 구독  
+이 작업을 `useEffect` 훅으로 수행할 수 있으나 아톰 수준에서 로직을 작성하기 위해 `onMount` 옵션 활용
+
+#### 4) `jotai/utils` 번들 소개
+
+Jotai는 다양한 유틸리티 함수가포함된 `jotai/utils` 번들을 제공함
+ex) `jotai/utils`의 `atomWithStorage` 함수를 사용하면 로컬 스토리지에 상태를 저장할 수 있음
+
+#### 5) 라이브러리 사용법 이해하기
+
+두 라이브러리가 내부적으로 `Jotai` 라이브러리를 사용한다고 가정했을 때, 두 라이브러리를 사용하게 된다면 이중 공급자 문제가 발생함
+
+- 첫 번째 라이브러리의 아톰이 두번째 라이브러리의 공급자에 연결될 가능성이 존재함
+- 이를 해결하기 위해 Jotai는 특정 공급자에 연결하는 방법인 스코프 개념을 제공함.
+- 예상대로 작동하게 하려면 Provider 컴포넌트와 `useAtom` 훅에 동일한 스코프 변수를 전달해야 함
+
+#### 6) 고급 기능 소개
+
+`Jotai`가 React Suspense 기능을 지원함.
+
+- 파생 atom의 read 함수가 Promise를 반환하면 `useAtom` 훅이 일시 중단되고 리액트는 fallback을 표시함
