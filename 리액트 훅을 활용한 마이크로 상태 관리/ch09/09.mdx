@@ -88,14 +88,328 @@ Valtio는 Proxy를 활용해 상태 변경을 감지하는 라이브러이자 �
 
 ### Proxy를 활용한 변경 감지 및 불변 상태 생성하기
 
+Valtio는 Proxy를 사용해 변경 가능한 객체에서 변경 불가능한 객체를 생성하며, 이 불변 객체를 snapshot이라고 함.
+
+Proxy 객체로 감싼 변경 가능한 객체를 생성하려면 Valtio를 통해 `proxy`함수를 사용하면 됨
+
+```tsx
+import { proxy } from "valtio";
+
+const state = proxy({
+  count: 0,
+});
+```
+
+proxy 함수에서 반환하는 state 객체는 변경을 감지하는 Proxy 객체이므로 불변 객체를 생성할 수 있음
+
+#### 불변 객체를 생성하려면 Valtio를 통해 snapshot 함수를 사용하면 됨
+
+```tsx
+improt { snapshot } from "valtio";
+const snap1 = snapshot(state);
+```
+
+`state`도 `{ count: 0 }`이고 `snap1`도 `{ count: 0 }`이지만 `state`와 `snap1`은 서로 다른 참조를 가짐.  
+`state`는 Proxy로 감싼 변경 가능한 객체인 반면, `snap1`은 `Object.freeze`로 동결되어 변경 불가능한 객체가 됨.
+
+#### 스냅숏이 어떻게 작동하는지 살펴보자. `state` 객체를 변경하고 다음과 같이 다른 스냅숏을 만듦
+
+```
+++state.count;
+
+const snap2= snapshot(state);
+```
+
+`state`는 `{count : 1}`이며, 이전과 동일한 참조를 가짐.  
+`snap2`는 `{count : 1}`이지만 새로운 참조를 가짐. `snap`과 `snap2`는 불변임.
+
+#### `proxy`와 `snapshot` 함수는 중첩된 객체에 대해서도 작동하며 스냅숏 생성을 최적화함.
+
+즉, `snapshot` 함수는 필요한 경우 (속성이 변경될 때만) 스냅숏을 생성함.
+
+```tsx
+const state2 = proxy({
+  obj1: { c: 0 },
+  obj2: { c: 0 },
+});
+
+const snap21 = snapshot(state2);
+
+state2.obj1.c++;
+
+const snap22 = snapshot(state2);
+```
+
+이 경우, `snap21`은 `{ obj1: { c: 0 }, obj2: { c: 0 } }`이며, `snap22`는 `{ obj1: { c: 1 }, obj2: { c: 0 } }`임.  
+`snap21`과 `snap22`는 서로 다른 참조를 가짐. (`snap21` !== `snap22`)
+
+#### 중첩된 객체 내부를 살펴보자
+
+`snap21.obj1`과 `snap22.obj1`은 서로 다른 참조를 가지지만 `snap21.obj2`와 `snap22.obj2`는 동일한 참조를 가짐.  
+➡️ `obj2`의 내부 속성 `c`가 변경되지 않았기 때문 (갱신되지 않은 속성은 동일한 참조를 가짐, `snap21.obj2 === snap22.obj2`)
+
+스냅숏 최적화는 중요한 기능임.  
+`snap21.obj2 === snap22.obj2`처럼 동일한 참조를 가진다는 것은 메모리를 공유한다.  
+Valtio는 필요한 경우에만 스냅숏을 생성해서 메모리 사용을 최적화한다.
+
+`Zustand`를 사용하게 되면 이 메모리 최적화는 개발자의 몫임 (직접 구현해야함)
+
+> Valtio의 최적화는 이전 스냅숏에 대한 캐싱을 기반으로 하며, 캐시 공간은 하나다(직전 스냅숏).  
+> ++state.count로 카운트를 늘린 다음 --state.count로 카운트를 줄이면 새로운 스냅숏이 생성됨
+
 ---
 
 ### Proxy를 활용한 리렌더링 최적화
+
+`Valtio`는 리렌더링을 최적화하고 변경을 감지하기 위해 Proxy를 사용함.
+
+`useSnapshot`의 구현은 `snapshot` 함수와 이를 감싸는 다른 Proxy를 기반으로 함.
+
+- `snapshot` 프락시는 `proxy` 함수에서 사용되는 프락시와 다른 목적이 있음.  
+  스냅숏 객체의 속성 접근을 감지하는데 사용됨. ➡️ `snapshot` 프락시를 통해 렌더링 최적화가 진행됨
+
+```tsx
+import { proxy, useSnapshot } from "valtio";
+
+// proxy를 사용해 state 객체를 만듦
+// proxy 함수를 초기 객체를 받아 새로운 Proxy 객체를 반환함 (원하는대로 state 객체를 변경할 수 있음)
+const state = proxy({
+  count1: 0,
+  count2: 0,
+});
+
+// state 객체를 사용하고 속성을 표시하는 `Counter1` 컴포넌트
+const Counter1 = () => {
+  const snap = useSnapshot(state);
+  const inc = () => ++state.count1;
+  return (
+    <div>
+      {snap.count1}
+      <button onClick={inc}>+1</button>
+    </div>
+  );
+};
+
+// state 객체를 사용하고 속성을 표시하는 `Counter2` 컴포넌트
+const Counter2 = () => {
+  const snap = useSnapshot(state);
+  const inc = () => ++state.count2;
+  return (
+    <div>
+      {snap.count2}
+      <button onClick={inc}>+1</button>
+    </div>
+  );
+};
+```
+
+- `useSnapshot`에서 반환하는 값의 변수명을 `snap`으로 정의하는 것이 `valtio`의 관례임
+- `inc`는 `state` Proxy 객체를 변경하는 함수
+- `snap`을 읽기 전용 객체로 사용. (`Object.freeze`로 동결되며 기술적으로 변경할 수 없음)  
+  접근은 `useSnapshot` 훅에 의해 추적 정보로 감지되며, 추적 정보를 기반으로 `useSnapshot` 훅은 필요한 경우에만 리렌더링을 감지함
 
 ---
 
 ### 작은 애플리케이션 만들기
 
+`Valtio`를 사용해 작은 애플리케이션을 만들어보자.
+
+```tsx
+type Todo = {
+  id: number;
+  text: string;
+  done: boolean;
+};
+
+// state객체는 기본값으로 사용할 객체를 `proxy` 함수에 전달해 생성함
+const state = proxy<{ todos: Todo[] }>({
+  todos: [],
+});
+
+// state 상태 조작 메서드
+const createTodo = (title: string) => {
+  state.todos.push({
+    id: nanoid(),
+    text: title,
+    done: false,
+  });
+};
+
+const removeTodo = (id: number) => {
+  const index = state.todos.findIndex((todo) => todo.id === id);
+  state.todos.splice(index, 1);
+};
+
+const toggleTodo = (id: number) => {
+  const index = state.todos.findIndex((todo) => todo.id === id);
+  state.todos[index].done = !state.todos[index].done;
+};
+
+// TodoItem 컴포넌트
+type Props = {
+  id: string;
+  text: string;
+  done: boolean;
+};
+
+const TodoItem = ({ id, text, done }: Props) => {
+  const remove = () => removeTodo(id);
+  const toggle = () => toggleTodo(id);
+  return (
+    <div>
+      <input type="checkbox" checked={done} onChange={toggle}>
+        Toggle
+      </input>
+      <span style={{ textDecoration: done ? "line-through" : "none" }}>
+        {text}
+      </span>
+      <button onClick={remove}>Remove</button>
+    </div>
+  );
+};
+
+const MemoedTodoItem = memo(TodoItem);
+
+// TodoList 컴포넌트
+const TodoList = () => {
+  const snap = useSnapshot(state);
+  return (
+    <div>
+      {snap.todos.map((todo) => (
+        <MemoedTodoItem key={todo.id} {...todo} />
+      ))}
+    </div>
+  );
+};
+
+// NewTodo 컴포넌트
+const NewTodo = () => {
+  const [text, setText] = useState("");
+  const add = () => {
+    createTodo(text);
+    setText("");
+  };
+  return (
+    <div>
+      <input value={text} onChange={(e) => setText(e.target.value)} />
+      <button onClick={add} disalbed={!text}>
+        Add
+      </button>
+    </div>
+  );
+};
+
+// App 컴포넌트
+const App = () => {
+  return (
+    <div>
+      <NewTodo />
+      <TodoList />
+    </div>
+  );
+};
+```
+
+성능 개선 요소가 존재함.  
+`done` 상태를 전환하면 TodoItem 뿐만 아니라 TodoList 컴포넌트도 리렌더링됨.  
+➡️ 해결방안: 각각의 TodoItem 컴포넌트에서 `useSnapshot`을 사용하기
+
+```tsx
+const TodoItem = ({ id }: { id: string }) => {
+  const todoState = state.todos.find((todo) => todo.id === id);
+  if (!todoState) {
+    throw new Error("invalid todo id");
+  }
+  const { title, done } = useSnapshot(todoState);
+
+  return (
+    <div>
+      <input type="checkbox" checked={done} onChange={() => toggleTodo(id)} />
+      <span style={{ textDecoration: done ? "line-through" : "none" }}>
+        {title}
+      </span>
+      <button onClick={() => removeTodo(id)}>Remove</button>
+    </div>
+  );
+};
+
+const MemoedTodoItem = memo(TodoItem);
+
+// TodoList 컴포넌트
+const TodoList = () => {
+  const { todos } = useSnapshot(state);
+  const todoIds = todos.map((todo) => todo.id);
+  return (
+    <div>
+      {todoIds.map((todoId) => (
+        <MemoedTodoItem key={todoId} id={todoId} />
+      ))}
+    </div>
+  );
+};
+```
+
+이렇게 변경되면 TodoList 컴포넌트는 배열에서 id의 순서가 변경되거나 id가 추가, 제거 되는 경우에만 리렌더링됨.
+
 ---
 
 ### 접근 방식의 장단점
+
+고려해야할 요소 2가지
+
+#### 1) 2가지 멘탈 모델이 존재함
+
+a. 불변 갱신  
+b. 변경 가능한 갱신 ➡️ JS의 함수들(splice, ...)을 사용할 수 있다는 것
+
+JS는 변경 가능한 갱신을 허용하지만 리액트는 불변 상태를 중심으로 만들어졌음. 따라서 두 모델을 같이 사용하는 경우 혼동하지 않도록 주의해야 함.  
+해결책: 리액트의 상태와 Valtio의 상태를 분리하는 것
+
+#### 2) 중첩된 객체에서 값을 변경한 경우 + Proxy 기반 렌더링 최적화
+
+Valtio는 깊은 중첩 객체에서 변경 가능한 갱신으로 코드를 줄이는데 도움이 되며, Proxy 기반 렌더링 최적화를 사용해 애플리케이션 코드를 줄이는데 도움이 된다.
+
+```tsx
+const state = proxy({ count: 0, text: "hello" });
+
+// Valtio
+const Component = () => {
+  const { count } = useSnapshot(state);
+  return <div>{count}</div>;
+};
+
+// Zustand
+const Component = () => {
+  const count = useStore((state) => state.count);
+  return <div>{count}</div>;
+};
+```
+
+여기서 특정 속성에 따라 값을 사용하려면?
+
+```tsx
+// Valtio
+const Component = ({ showText }) => {
+  const snap = useSnapshot(state);
+  return (
+    <div>
+      {snap.count} {showText ? snap.text : ""}
+    </div>
+  );
+};
+
+// Zustand
+const Component = ({ showText }) => {
+  const count = useStore((state) => state.count);
+  const text = useStore((state) => (showText ? state.text : ""));
+  return (
+    <div>
+      {count} {text}
+    </div>
+  );
+};
+```
+
+조건이 많아질수록 Zustand는 훅이 많이 필요햐지만 Valtio는 `useSnapshot`을 사용해 한 번에 처리할 수 있음
+
+다만, Proxy 기반 렌더링 최적화의 단점은 예측 가능성이 떨어지고, 내부적으로 최적화를 처리하므로 디버깅하기가 어려울 수 있다.
