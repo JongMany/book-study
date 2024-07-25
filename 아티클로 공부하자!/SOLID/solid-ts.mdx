@@ -1,0 +1,593 @@
+https://ykss.netlify.app/translation/write_solid_react_hooks/?utm_source=substack&utm_medium=email
+
+https://blog.devgenius.io/solid-principles-with-real-world-examples-in-typescript-21962177c1ff
+
+https://medium.com/tradeling/solid-principles-using-typescript-d9d705be7d48
+[https://kooku0.github.io/blog/프론트엔드에-solid-적용하기/](https://kooku0.github.io/blog/%ED%94%84%EB%A1%A0%ED%8A%B8%EC%97%94%EB%93%9C%EC%97%90-solid-%EC%A0%81%EC%9A%A9%ED%95%98%EA%B8%B0/)
+
+[https://junghan92.medium.com/번역-ddd-hexagonal-onion-clean-cqrs-이-모든-것을-어떻게-함께-사용할까요-7453ead460d4](https://junghan92.medium.com/%EB%B2%88%EC%97%AD-ddd-hexagonal-onion-clean-cqrs-%EC%9D%B4-%EB%AA%A8%EB%93%A0-%EA%B2%83%EC%9D%84-%EC%96%B4%EB%96%BB%EA%B2%8C-%ED%95%A8%EA%BB%98-%EC%82%AC%EC%9A%A9%ED%95%A0%EA%B9%8C%EC%9A%94-7453ead460d4)
+
+# SOLID원칙 - TypeScript
+
+### 1. SRP(single Responsibility Principle)
+
+- 클래스(함수, 모듈)은 하나의 이유로 변경되어야 한다.
+  본질적으로, 하나의 고유한 책임만 캡슐화해야 한다.
+- 하나의 클래스가 여러 개의 책임을 가지게 된다면, 관리하기 어려워지고, 복잡해진다.
+  이러한 복잡성이 발생하는 이유는 하나의 수정이 여러 부분에 변화를 이끌게 되고(사이드 이펙트) 이것이 의도되지 않고 예측 불가능하게 작동되기 때문임.
+
+질문: 함수를 책임단위로 나누게 된다면, 결국 이 함수를 조합해서 사용하는 함수는 SRP를 못지키는 거 아닌가요?
+
+답변: 추상화 수준에 따라 책임의 범위가 달라진다…!
+
+그 추상화 수준을 지키며 코드를 관리하는 것이 어려운 일
+
+- 사용자 데이터베이스를 관리하는 TypeScript 시나리오
+  ```python
+  class  UserDataManager  {
+       getUsers (): User[] {
+           // 사용자 데이터 가져오기 및 반환
+       }
+
+       saveUser ( user :User): void {
+           // 사용자 데이터 저장
+       }
+  }
+
+   class  UserAuthenticationManager  {
+       authenticateUser ( user :User): boolean {
+           // 사용자 자격 증명 인증
+       }
+  }
+  ```
+
+예시)
+
+Non-SRP Approach
+
+```python
+@Controller('userposts')
+export class UserpostsController {
+  constructor(private readonly userpostsService: UserpostsService) {}
+
+  //endpoint for create new user
+  @Post('/createuser')
+  createUser(@Body() createUserDto: CreateUserDto) {
+    return this.userpostsService.createPost(createUserDto);
+  }
+
+  //endpoint for create new post
+  @Post('/createposts')
+  createPost(@Body() createPostDto: CreatePostDto) {
+    return this.userpostsService.createPost(createPostDto);
+  }
+}
+```
+
+- 이 클래스는 SRP를 위반함
+  - user와 관련된 endpoint와 post와 관련된 endpoint에 대한 책임을 가지고 있기 때문임.
+- SRP에 따르면 클래스는 오직 하나의 이유로 변경이 되어야 한다.
+  - Controller의 추상화 수준 자신이 가진 도메인의 endpoint의 변경이 발생할 때마다 변경하는 것이 좋은 수준이라고 알려져 있다.
+  - 이 경우, 2가지 도메인의 endpoint를 관리하므로 좋지 못한 추상화임.
+- user, post endpoint라는 관심사를 분리하기 위해 각각의 클래스로 분리하는 것이 좋다
+  ```python
+  @Controller('users')
+  export class UsersController {
+    constructor(private readonly usersService: UsersService) {}
+
+    // endpoint for create new user
+    @Post()
+    createUser(@Body() createUserDto: CreateUserDto) {
+      return this.usersService.createUser(createUserDto);
+    }
+  }
+
+  @Controller('posts')
+  export class PostsController {
+    constructor(private readonly postsService: PostsService) {}
+
+    // endpoint for create new post
+    @Post()
+    createPost(@Body() createPostDto: CreatePostDto) {
+      return this.postsService.createPost(createPostDto);
+    }
+  }
+  ```
+
+### 2. OCP (개방/폐쇄 원칙)
+
+- 클래스가 확장에는 개방적이지만 수정에는 폐쇄적이어야 한다.
+  - 기존 코드 수정없이 새로운 기능을 추가할 수 있어야 한다.
+- 기존 시스템에 기능을 추가하기 위해서는 기존에 존재하는 코드에 수정 없이 가능해야 한다.
+  대신 기존 코드를 수정하기 위해서는 inheritance, composition 등을 활용하여 확장할 수 있어야 한다.
+  → 이를 따르면 기존 코드 베이스에 중대한 변경사항이 존재하지 않을 수 있다.
+- 예시) TypeScript의 인터페이스와 추상 클래스를 활용하기
+  ```python
+  interface Authenticator {
+      authenticate(user: User): boolean;
+  }
+
+  class EmailAuthenticator implements Authenticator {
+      authenticate(user: User): boolean {
+          // Authenticate user via email
+      }
+  }
+
+  class UserAuthenticationManager {
+      constructor(private authenticator: Authenticator) {}
+
+      authenticateUser(user: User): boolean {
+          return this.authenticator.authenticate(user);
+      }
+  }
+  ```
+
+예시)
+
+- 기존 서비스는 이메일을 통해 알림을 주는 서비스가 구현되어 있다고 가정하자
+  갑자기 SMS를 통해 알림을 주는 기능을 추가해야 한다고 가정했을 때, 어떻게 기능을 구현해야 할까?
+  - 기존에 존재하는 이메일 알람 기능에 함수를 추가해야할까? ⇒ NO! (기존에 작동하는 코드에 새 기능을 추가하는것은 OCP를 위반하는 것임, 확장을 할 때 기존에 존재하는 기능들을 수정하지 말아야 함)
+    기존 이메일 알림 기능 내부에 SMS 알림 기능을 추가하는 것은 SRP를 위반하기도 하는 것임
+  Non-OCP
+  1.  알람을 전송하는 기능을 구현하기 위해 일반적인 메소드와 속성을 가진 인터페이스를 정의
+
+      ```python
+      export interface INotificationProvider{
+          send(user: User, message: string);
+      }
+      ```
+
+  2.  위에서 정의한 인터페이스를 구현하여 email 알람 기능 책임을 가진 EmailNotificationProvider 클래스를 정의함
+
+      ```python
+      export class EmailNotificationProvider implements INotificationProvider{
+
+          send(user: User, message: string) {
+              //logic
+              console.log("Method implementation for send Email Notification");
+          }
+      }
+      ```
+
+  3.  Notification 책임을 가진 컨트롤러 계층을 만들어 notification을 관리하도록 구현
+
+      ```python
+      @Controller('notifications')
+      export class NotificationsController {
+        constructor(private readonly notificationsService: NotificationsService) {}
+
+        @Post()
+        createNotification(@Body() createNotificationDto: CreateNotificationDto) {
+          return this.notificationsService.sendNotification(createNotificationDto);
+        }
+      }
+      ```
+
+  4.  Notification 책임을 가진 서비스 계층을 통해 여러 channel을 통해 알림을 보낼 수 있도록 한다.
+      이렇게 함으로써, NotificationService는 Email과 여러 개의 다른 채널들을 통해 알림을 할 수 있도록 구현되었음
+          ```python
+          @Injectable()
+          export class NotificationsService {
+            private readonly notificationMap: Map<string, INotificationProvider>;
+
+            constructor(private readonly emailNotification: EmailNotificationProvider) {
+              this.notificationMap = new Map([
+                ['email', this.emailNotification],
+              ]);
+            }
+
+            async sendNotification(createNotificationDto: CreateNotificationDto): Promise<void> {
+              const { user, message, channel } = createNotificationDto;
+              for (const ch of channel) {
+                try {
+                  const notification = this.notificationMap.get(ch);
+                  if (!notification || notification === undefined) {
+                    throw new Error(`Unsupported notification channel: ${ch}`);
+                  }
+                  await notification.send(user, message);
+                } catch (error) {
+                  console.error('Error:', error.message);
+                }
+             }
+            }
+          }
+          ```
+  5.  SMS 알림 기능을 추가해야 한다면? SMS Notification을 위한 Provider를 만들고, Service 계층에 다음과 같이 추가하면 될까?
+
+      ```python
+      @Injectable()
+      export class NotificationsService {
+        private readonly notificationMap: Map<string, INotificationProvider>;
+
+        constructor(
+          private readonly emailNotification: EmailNotificationProvider,
+          private readonly smsNotificationProvider: SmsNotificationProvider
+          ) {
+          this.notificationMap = new Map([
+            ['email', this.emailNotification],
+            ['sms', this.smsNotificationProvider], // new modification
+          ]);
+        }
+
+        async sendNotification(createNotificationDto: CreateNotificationDto): Promise<void> {
+          // same logic
+
+        }
+      }
+      ```
+
+      이렇게 추가하게 된다면, 기존에 잘 작동하던 코드에 수정을 가하게 되었으므로 OCP를 위반한 셈이다.
+
+OCP를 위반하지 않도록 수정하기..!
+
+Factory Pattern을 사용하여 이런 종류의 확장에 대응하기
+
+- `NotificiationProviderFactory`를 만들자. 이는 provided channel에 기반하여 provider instance를 생성해주도록 캡슐화된 클래스이다. 이를 통해 새로운 채널을 추가할 때 확장이 쉬워진다.
+- 새로운 Notification 채널을 추가하는 것은 기존 Service 코드를 수정하지 않고 새로운 Provider 클래스를 만들고, Factory를 추가하는 것과 관련되어 있다. ⇒ OCP!
+  ```python
+  @Injectable()
+  export class NotificationProviderFactory {
+    create(channel: string): INotificationProvider {
+      switch (channel) {
+        case 'email':
+          return new EmailNotificationProvider();
+        case 'sms':
+          return new SmsNotificationProvider();
+        default:
+          throw new Error(`Unsupported notification channel: ${channel}`);
+      }
+    }
+  }
+  ```
+  - 이를 보면 NotificationProviderFactory를 수정했으니 OCP를 위반한 거 아닌가? 라고 생각할 수 있다.
+    OCP를 위반하지 않았다! NotificationProviderFactory라는 factory class는 확장을 위해 특별히 설계된 개념이기 때문이다.
+    Factory Pattern에서 객체를 생성하는 책임은 Factory Class에 할당된다.
+  ```python
+  @Injectable()
+  export class NotificationsService {
+    constructor(private readonly notificationProviderFactory: NotificationProviderFactory) {}
+
+    async sendNotification(createNotificationDto: CreateNotificationDto): Promise<void> {
+      const { user, message, channel } = createNotificationDto;
+
+      for (const ch of channel) {
+        try {
+          const notificationProvider = this.notificationProviderFactory.create(ch);
+          await notificationProvider.send(user, message);
+        } catch (error) {
+          // Log the error for debugging and monitoring purposes
+          console.error('Error:', error.message);
+        }
+      }
+    }
+  }
+  ```
+
+### 3. LSP (리스코프 치환 원칙)
+
+- 파생 클래스 객체가 프로그램의 정확성에 영향을 미치지 않고, 기본 클래스 객체로 대체될 수 있어야 한다.
+- 상위 클래스의 객체가 하위 클래스의 객체로 프로그램의 정확성에 영향을 끼치지 않으면서 대체될 수 있어야 한다.
+  → 파생 클래스는 그들의 부모 클래스에 프로그램의 동작을 변경시키지 않으면서 대체될 수 있어야 한다. 이를 통해 다형성이 올바르게 작동하고 클래스가 예상치 못한 동작을 도입하지 않을 수 있도록 할 수 있다.
+- 예제
+  ```python
+  interface Shape {
+      area(): number;
+  }
+
+  class Circle implements Shape {
+      constructor(private radius: number) {}
+
+      area(): number {
+          return Math.PI * this.radius * this.radius;
+      }
+  }
+
+  class Rectangle implements Shape {
+      constructor(private width: number, private height: number) {}
+
+      area(): number {
+          return this.width * this.height;
+      }
+  }
+  ```
+
+ex) 우리의 애플리케이션에서 Paypal과 Stripe 2가지 결제 방식이 있다고 가정
+
+Non-LSP 방식
+
+1. AbstractPaymentService 추상 클래스를 만들고, 그 안에 payment 옵션을 위한 2가지 일반적인 메서드를 정의
+
+   ```python
+   abstract class AbstractPaymentService {
+       abstract processPayment();
+       abstract refundPayment();
+   }
+   ```
+
+2. AbstractPaymentService 클래스를 확장하여, Stripe 결제를 관리하기 위한 클래스를 정의하기
+
+   ```python
+   class StripePayment extends AbstractPaymentService {
+     processPayment() {
+         return console.log("Processing Stripe Payment");
+     }
+     refundPayment() {
+         return console.log("Refunding Stripe Payment");
+     }
+   }
+   ```
+
+   - 위의 예시에서 StripePayment는 processPayment, refundPayment 두 동작을 모두 수행할 수 있는 클래스이므로, LSP를 위반하지 않음
+
+3. PaypalPayment 클래스를 확장하기
+
+   ```python
+
+   class PaypalPayment extends AbstractPaymentService {
+
+       processPayment() {
+           return console.log("Processing paypal Payment");
+       }
+       refundPayment() {
+           throw new Error("refundPayment method does not support in paypal payment")
+       }
+   }
+   ```
+
+   - 이 확장은 LSP를 위반하였음.
+     PaypalPayment가 refundPayment 액션을 지원하지 않기 때문임. 이것은 애플리케이션이 예상치 못한 동작을 수행할 수 있게 만듦.
+   - 이 경우를 해결하는 가장 좋은 방법은 결제를 처리하는 별도의 인터페이스나 추상 클래스를 만드는 것임.
+
+LSP 방식
+
+```python
+interface IBaseProcessPayment{
+    processPayment();
+}
+
+class PaypalPayment implements IBaseProcessPayment{
+    processPayment() {
+        return console.log("Processing paypal Payment");
+    }
+}
+```
+
+호환 가능한 수준의 인터페이스로 분리하기
+
+### 4. ISP (인터페이스 분리 원칙)
+
+- 클라이언트가 사용하지 않는 인터페이스에 의존하도록 강요받아서는 안된다.
+- 이 원칙은 여러 목적을 달성하는 큰 하나의 인터페이스를 만들기 보다,
+  특정 클라이언트의 요구에 맞는 더 작은 더 집중된 인터페이스에 집중하도록 장려함.
+- ISP를 지킴으로써, 클라이언트가 불필요한 종속성으로 부담을 받는 것을 방지하고 시스템의 한 부분에서 변경이 발생했을 때 관련 없는 부분에 영향을 미칠 가능성을 줄일 수 있음.
+- 예시
+  ```python
+  interface AudioPlayer {
+      playAudio(): void;
+  }
+
+  interface VideoPlayer {
+      playVideo(): void;
+  }
+
+  class MediaPlayer implements AudioPlayer, VideoPlayer {
+      playAudio(): void {
+          // Play audio logic
+      }
+
+      playVideo(): void {
+          // Play video logic
+      }
+  }
+  ```
+
+NON ISP
+
+1. Notification 인터페이스를 정의
+
+   알람을 보낼 때 사용될 것 같은 모든 메소드를 다 정의함.
+
+   - 이렇게 정의할 때의 이슈는 우리가 구체적인 클래스를 구현할 때 발생한다.
+     Notification 인터페이스에 정의된 모든 메서드를 구현해야 하며, 심지어 이 메서드가 필요없을 때도 구현을 해줘야 함.
+   - 이 예시에서 EmailNotification 구체 클래스는 sendViaEmail 메서드를 구현함에도 다른 메서드를 구현해야 하고 결국 Error로 처리함 ⇒ ISP를 위반. (LSP도 위반함)
+
+   ```python
+   interface Notification {
+     // Methods for all notification channels (email, SMS, etc.)
+     sendViaEmail(user: User, message: string): void;
+     sendViaSMS(user: User, message: string): void;
+     // ... potentially more methods for other channels
+   }
+
+   // Concrete implementation
+   class EmailNotification implements Notification {
+     sendViaEmail(user: User, message: string): void {
+       console.log(`Sending email notification to ${user.email}: ${message}`);
+     }
+
+     // Implementations for other methods (SMS, etc.) would be empty or throw errors
+     sendViaSMS(user: User, message: string): void {
+       throw new Error('SMS notifications not supported');
+     }
+
+     // ... similar implementations for other channels
+   }
+   ```
+
+ISP를 지킨 원칙
+
+- 인터페이스를 분리하여 이를 구현하는 클래스에서 관련된 메서드만 정의할 수 있도록 만들어야 함.
+  ```python
+  interface EmailNotification {
+    sendViaEmail(user: User, message: string): void;
+  }
+
+  interface SMSNotification {
+    sendViaSMS(user: User, message: string): void;
+  }
+
+  // ... similar interfaces for other channels
+
+  // Concrete implementations
+  class EmailNotificationImpl implements EmailNotification {
+    sendViaEmail(user: User, message: string): void {
+      console.log(`Sending email notification to ${user.email}: ${message}`);
+    }
+  }
+
+  class SMSNotificationImpl implements SMSNotification {
+    sendViaSMS(user: User, message: string): void {
+      console.log(`Sending SMS notification to ${user.phone}: ${message}`);
+    }
+  }
+
+  // ... similar implementations for other channels
+  ```
+
+### 5. DIP (의존성 역전 원칙)
+
+- 의존성 역전 원칙은 상위 모듈이 하위 모듈에 의존해서는 안 된다고 주장합니다. 둘 다 추상화에 의존해야 합니다. 종속성 주입과 같은 TypeScript의 기능은 DIP를 준수하는 데 도움이 됩니다.
+- 이 원칙은 고수준의 모듈이 하위 수준 모듈의 구체적 구현이 아닌 추상적이고 안정적인 인터페이스에 의존하도록 보장하여 분리를 촉진시킴
+- 추상화에 의존하여 모듈을 느슨하게 결합되도록 함.
+  한 모듈의 변경이 반드시 그것에 의존하는 다른 모듈의 변경을 필요로 하지 않는다는 것을 의미함.
+  ⇒ 유연성, 유지보수성, 테스트가능성을 개선함
+- 예제
+  ```python
+  interface Logger {
+      log(message: string): void;
+  }
+
+  class ConsoleLogger implements Logger {
+      log(message: string): void {
+          console.log(message);
+      }
+  }
+
+  class UserManager {
+      constructor(private logger: Logger) {}
+
+      addUser(user: User): void {
+          // Add user logic
+          this.logger.log(`User ${user.name} added.`);
+      }
+  }
+  ```
+
+예제
+
+우리가 정적 파일 업로드를 위해 Azure Blob Storage Service를 우리의 애플리케이션에 통합한다고 가정하자.
+
+- non-DIP 방식에서는 별도의 AzureBlobStorageService 클래스를 만들어 파일 업로드 기능을 해당 클래스에 추가.
+  - upload 메서드에는 정적 파일 업로드를 하도록 구현함
+
+Non-DIP Approach
+
+1. AzureBlobStorageService 구현
+
+   ```python
+   // AzureBlobStorageService
+   @Injectable()
+   export class AzureBlobStorageService {
+     async upload(file: Express.Multer.File, containerName: string): Promise<string> {
+       // Logic to upload file to Azure Blob Storage
+       return 'azure_blob_url'; // Replace with actual URL
+     }
+   }
+   ```
+
+2. PostService 구현하기
+
+   ```python
+   @Injectable()
+   export class PostsService {
+
+     constructor(private readonly azureBlobService: AzureBlobStorageService) {}
+
+     async createBlogPost(coverPhoto: Express.Multer.File, createBlogPostDto: createBlogPostDto): Promise<any> {
+       const coverPhotoUrl = await this.azureBlobService.upload(coverPhoto, 'blog-cover-photos');
+       // Remaining Logic
+       return { coverPhotoUrl, createBlogPostDto };
+     }
+
+   }
+   ```
+
+   PostService의 constructor에 AzureBlobStorageServicer를 바로 주입시킴.
+
+   이것은 DIP를 위반함
+
+   1. PostService라는 고수준의 모듈이 AzureBlobStorageService라는 구체적인 모듈에 의존하기 때문임.
+   2. 이렇게 구체적인 구현에 강하게 결합된 PostService는 Azure Blob Storage가 어떻게 구현되었는지에 의존하게 됨 (하위 모듈의 내부 구현사항에 의존)
+
+   DIP를 만족시키기 위해서 의존성이 뒤집혀야 한다. 즉, 고수준의 모듈은 구체적인 모듈이 아닌 추상화에 의존해야 함.
+
+   - storage service를 위한 추상화된 클래스를 도입하고 이를 PostSErvice에 주입하게 되면 다른 Sotrage 구현 간의 변환이 좀 더 쉬워지고 유지보수가 쉬워진다.
+
+DIP-compilant Approach
+
+1. AbstractStorageService라는 추상메서드를 구현하고, upload 추상 메서드를 정의하기
+
+   ```python
+   export abstract class AbstractStorageService {
+       abstract upload(file: Express.Multer.File, containerName: string): Promise<string>;
+   }
+   ```
+
+2. AbstractStorage를 구현한 AzureBlobStorageService를 정의
+
+   ```python
+   @Injectable()
+   export class AzureBlobStorageService implements AbstractStorageService{
+     async upload(file: Express.Multer.File, containerName: string): Promise<string> {
+       // Logic to upload file to Azure Blob Storage
+       return 'azure_blob_url'; // Replace with actual URL
+     }
+   }
+
+   ```
+
+3. 이후, AbstractStorageService를 호출할 때, AzureBlobStorageService 인스턴스를 사용하도록 Nest.js의 설정을 변경 (Custom Provider를 사용)
+
+   module.ts
+
+   ```python
+   @Module({
+     imports:[],
+     controllers: [PostsController],
+     providers: [PostsService,
+       {
+         provide: AbstractStorageService,
+         useClass: AzureBlobStorageService
+       }],
+   })
+   ```
+
+4. AbstractStorageService의 참조(reference)를 PostService 생성자에 주입하기
+
+   AbstractStorageService 요청이 들어올 때 NestJS가 AzureBlobStorageService로 호출해줌.
+
+   ```python
+   @Injectable()
+   export class PostsService {
+
+     // Non-DIP Approach Constructor
+     // constructor(private readonly azureBlobService: AzureBlobStorageService) {}
+
+     // DIP-compliant Approach Constructor
+     constructor(private readonly istorageService: AbstractStorageService) {}
+
+
+     // This method implemented for demonstrate Dependency Inversion Principle
+     async createBlogPost(coverPhoto: Express.Multer.File, createBlogPostDto: createBlogPostDto): Promise<any> {
+
+       const coverPhotoUrl = await this.istorageService.upload(coverPhoto, 'blog-cover-photos');
+       // Write a DB Query to Save blog post content along with cover photo URL
+       console.log(this.istorageService.constructor.name);
+       return { coverPhotoUrl, createBlogPostDto };
+     }
+
+   }
+   ```
+
+   - 이렇게 수정하면 AWS S3를 사용하고 싶을 때면 AbstractStorageService를 확장한 `AmazonS3StorageService`를 구현한 후에 useClass 속성을 `AmazonS3StorageService`로 변경하면 된다.
+   - 이렇게 구현하면 OCP원칙도 지키게 된다.
