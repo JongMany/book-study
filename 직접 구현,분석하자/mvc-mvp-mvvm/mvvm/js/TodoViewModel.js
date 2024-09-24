@@ -42,7 +42,6 @@ export default class TodoViewModel {
   }
 
   bindTodoListEvents() {
-    console.log(this.view);
     this.view.todoList.bindEventRemoveButton(
       this.handleClickRemoveBtn.bind(this)
     );

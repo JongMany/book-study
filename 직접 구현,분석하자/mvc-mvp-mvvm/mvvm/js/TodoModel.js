@@ -5,7 +5,6 @@ export default class TodoModel extends Observable {
     super();
     this.storageService = storageService;
     let _todoList = storageService.load() || [];
-    console.log(_todoList);
 
     Object.defineProperty(this, "todoList", {
       get() {

@@ -55,6 +55,6 @@ export default class TodoListView {
       h2.innerHTML = `Last Todo: None`;
       return;
     }
-    h2.innerHTML = `Last Todo: ${todoList[todoList.length - 1]?.id}`;
+    h2.innerHTML = `Last Todo: ${lastItem.id}`;
   }
 }
